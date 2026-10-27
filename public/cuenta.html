@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mi cuenta · POLOLAB</title>
+  <meta name="description" content="Polos de algodón pima peruano. Colección Lima 26.">
+  <meta name="theme-color" content="#070708">
+  <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="/css/styles.css">
+  <script type="module" src="/js/cuenta.js"></script>
+</head>
+<body class="has-header">
+  <header data-header class="site-header"></header>
+  <main class="container">
+    <div class="account-head">
+      <div>
+        <span class="kicker">Mi cuenta</span>
+        <h1 data-hello>Hola</h1>
+      </div>
+      <button class="btn-ghost btn-sm" type="button" data-logout>Cerrar sesión</button>
+    </div>
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" aria-selected="true" data-tab="pedidos">Mis pedidos</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="datos">Mis datos</button>
+    </div>
+    <section data-panel="pedidos"></section>
+    <section data-panel="datos" hidden></section>
+    <div style="height: 60px"></div>
+  </main>
+  <footer data-footer></footer>
+</body>
+</html>

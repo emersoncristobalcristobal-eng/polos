@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ingresar · POLOLAB</title>
+  <meta name="description" content="Polos de algodón pima peruano. Colección Lima 26.">
+  <meta name="theme-color" content="#070708">
+  <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="/css/styles.css">
+  <script type="module" src="/js/auth.js"></script>
+</head>
+<body class="has-header">
+  <header data-header class="site-header"></header>
+  <main class="auth">
+    <div class="auth-visual" aria-hidden="true">
+      <div class="hero-fog"></div>
+      <div class="neon"><span></span><span></span><span></span></div>
+      <div class="polo-wrap float" data-auth-polo></div>
+      <div class="plate"><strong style="font-family: var(--font-display); font-size: 34px; letter-spacing: .12em">LIMA 26</strong></div>
+    </div>
+    <div class="auth-panel">
+      <form class="auth-form" data-auth-form="login" novalidate>
+        <span class="kicker">Bienvenido de vuelta</span>
+        <h1>Ingresar</h1>
+        <label class="field"><span>Correo</span><input type="email" name="email" autocomplete="email" required></label>
+        <label class="field"><span>Contraseña</span><input type="password" name="password" autocomplete="current-password" required></label>
+        <p class="form-error" role="alert" data-error></p>
+        <button class="btn btn-block" type="submit">Ingresar</button>
+        <p class="muted">¿Aún no tienes cuenta? <a class="link-btn" href="/registro.html" data-keep-next>Crea una aquí</a></p>
+        <div class="demo-box">
+          <strong>Cuentas de prueba</strong><br>
+          Administrador: <code>admin@pololab.pe</code> / <code>admin123</code><br>
+          Cliente: <code>cliente@pololab.pe</code> / <code>cliente123</code><br>
+          <button type="button" class="link-btn" data-demo="admin">Usar administrador</button> ·
+          <button type="button" class="link-btn" data-demo="cliente">Usar cliente</button>
+        </div>
+      </form>
+    </div>
+  </main>
+</body>
+</html>

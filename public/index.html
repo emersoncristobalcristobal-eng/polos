@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>POLOLAB · Colección Lima 26</title>
+  <meta name="description" content="Polos de algodón pima peruano. Colección Lima 26: diseñada en la calle, hecha en Perú. Personaliza el tuyo con tu nombre.">
+  <meta name="theme-color" content="#070708">
+  <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="/css/styles.css">
+  <script type="module" src="/js/home.js"></script>
+</head>
+<body>
+  <header data-header class="site-header is-overlay"></header>
+
+  <main>
+    <!-- Escenario principal -->
+    <section class="hero" aria-label="Colección Lima 26" data-hero data-reveal>
+      <div class="hero-fog" aria-hidden="true"></div>
+      <div class="neon" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="hero-floor" aria-hidden="true"></div>
+      <div class="hero-stage" data-stage></div>
+      <div class="plate">
+        <h1><span class="glitch" data-glitch="LIMA 26">LIMA 26</span></h1>
+        <p>Diseñado en la calle · Hecho en Perú</p>
+      </div>
+      <div class="hero-side-copy">
+        <span class="kicker">Nueva colección</span>
+        <p>Polos de algodón pima peruano bajo las luces de la ciudad. Edición limitada.</p>
+      </div>
+      <a class="scroll-hint" href="#material">Desliza para explorar<i></i></a>
+    </section>
+
+    <!-- 01 -->
+    <section class="story story--red" id="material" data-reveal>
+      <div class="story-grid">
+        <div class="story-visual reveal-item" data-visual="material"></div>
+        <div class="story-copy">
+          <span class="kicker reveal-item">01 — Material</span>
+          <h2 class="reveal-item"><span class="glitch" data-glitch="Ligero">Ligero</span><br>y resistente</h2>
+          <p class="glitch-line reveal-item" data-scramble>Algodón pima que te mantiene en movimiento</p>
+          <p class="reveal-item">180 g de algodón pima peruano, costuras dobles y un cuello acanalado que no se deforma. Hecho para la calle, de día y de noche.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 02 -->
+    <section class="story story--teal" data-reveal>
+      <div class="story-grid">
+        <div class="story-visual reveal-item" data-visual="origen"></div>
+        <div class="story-copy">
+          <span class="kicker reveal-item">02 — Origen</span>
+          <h2 class="reveal-item">Nacido en<br><span class="glitch" data-glitch="la calle">la calle</span></h2>
+          <p class="glitch-line reveal-item" data-scramble>Inspirado en las luces de Lima a las 3 a. m.</p>
+          <p class="reveal-item">Cada diseño empieza en la ciudad: el asfalto, los letreros de neón y la gente que se mueve cuando todos duermen.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 03 -->
+    <section class="story story--marquee" data-reveal>
+      <div class="marquee" aria-hidden="true">
+        <div class="marquee-row"><span>LIMA26</span><span>LIMA26</span><span>LIMA26</span><span>LIMA26</span><span>LIMA26</span><span>LIMA26</span></div>
+        <div class="marquee-row"><span>LIMA26</span><span>LIMA26</span><span>LIMA26</span><span>LIMA26</span><span>LIMA26</span><span>LIMA26</span></div>
+        <div class="marquee-row"><span>LIMA26</span><span>LIMA26</span><span>LIMA26</span><span>LIMA26</span><span>LIMA26</span><span>LIMA26</span></div>
+      </div>
+      <div class="marquee-center">
+        <div class="story-visual reveal-item float" data-visual="edicion"></div>
+        <span class="kicker reveal-item">03 — Edición limitada</span>
+        <a class="btn reveal-item" href="/tienda.html">Comprar la colección</a>
+      </div>
+    </section>
+
+    <!-- 04 -->
+    <section class="story story--light" data-reveal>
+      <div class="story-grid">
+        <div class="story-visual reveal-item" data-visual="crear"></div>
+        <div class="story-copy">
+          <span class="kicker reveal-item">04 — Personaliza</span>
+          <h2 class="reveal-item">El poder<br>de crear</h2>
+          <p class="reveal-item">Haz clic en el texto y escribe tu nombre. Lo estampamos en tu polo por solo S/ 10 adicionales.</p>
+          <label class="reveal-item">
+            <span class="sr-only">Escribe tu nombre</span>
+            <input class="name-input" maxlength="12" placeholder="Tu nombre" autocomplete="off" data-name-input>
+          </label>
+          <div class="reveal-item"><a class="btn" href="/tienda.html" data-custom-link>Personalizar el mío</a></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="perks" data-perks></div>
+
+    <section class="section">
+      <div class="container">
+        <div class="section-head">
+          <div>
+            <span class="kicker">La colección</span>
+            <h2>Encuentra tu polo</h2>
+          </div>
+          <a class="btn-ghost" href="/tienda.html">Ver toda la tienda</a>
+        </div>
+        <div class="grid" data-grid></div>
+      </div>
+    </section>
+  </main>
+
+  <footer data-footer></footer>
+</body>
+</html>

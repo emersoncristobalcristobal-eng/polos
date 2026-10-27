@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tienda · POLOLAB</title>
+  <meta name="description" content="Polos de algodón pima peruano. Colección Lima 26.">
+  <meta name="theme-color" content="#070708">
+  <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="/css/styles.css">
+  <script type="module" src="/js/tienda.js"></script>
+</head>
+<body class="has-header">
+  <header data-header class="site-header"></header>
+  <main>
+    <section class="page-hero">
+      <div class="container">
+        <span class="kicker">Tienda online</span>
+        <h1>La <em>colección</em></h1>
+      </div>
+    </section>
+    <div class="container">
+      <div class="toolbar">
+        <div class="chips" role="group" aria-label="Categorías" data-chips></div>
+        <label class="search">
+          <span class="sr-only">Buscar polos</span>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input type="search" placeholder="Buscar polos" data-search>
+        </label>
+        <label>
+          <span class="sr-only">Ordenar</span>
+          <select data-sort>
+            <option value="">Destacados</option>
+            <option value="nuevo">Más nuevos</option>
+            <option value="precio-asc">Precio: menor a mayor</option>
+            <option value="precio-desc">Precio: mayor a menor</option>
+          </select>
+        </label>
+      </div>
+      <p class="results-count" data-count></p>
+      <div class="grid" data-grid></div>
+      <div style="height: 80px"></div>
+    </div>
+  </main>
+  <footer data-footer></footer>
+</body>
+</html>

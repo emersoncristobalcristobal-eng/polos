@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Panel de administración · POLOLAB</title>
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#070708">
+  <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="/css/styles.css">
+  <link rel="stylesheet" href="/css/admin.css">
+  <script type="module" src="/js/admin.js"></script>
+</head>
+<body class="admin">
+  <aside class="admin-side" data-side>
+    <a class="brand" href="/admin.html#dashboard" data-brand></a>
+    <span class="admin-badge">Administrador</span>
+    <nav class="admin-nav" aria-label="Panel" data-nav></nav>
+    <div class="admin-side-foot">
+      <a class="admin-link" href="/" target="_blank" rel="noopener" data-store-link></a>
+      <a class="admin-link" href="/cuenta.html?tab=datos" data-profile-link></a>
+      <button class="admin-link" type="button" data-logout></button>
+      <small data-admin-name></small>
+    </div>
+  </aside>
+  <div class="admin-scrim" data-scrim></div>
+
+  <div class="admin-main">
+    <header class="admin-top">
+      <button class="icon-btn admin-menu" type="button" aria-label="Abrir menú" data-menu></button>
+      <div>
+        <span class="kicker" data-kicker>Panel</span>
+        <h1 data-title>Dashboard</h1>
+      </div>
+      <div class="admin-actions" data-actions></div>
+    </header>
+    <div class="admin-content" data-view></div>
+  </div>
+
+  <dialog class="modal" data-modal aria-labelledby="modal-title">
+    <div class="modal-head">
+      <h2 id="modal-title" data-modal-title></h2>
+      <button class="icon-btn" type="button" aria-label="Cerrar" data-modal-close></button>
+    </div>
+    <div class="modal-body" data-modal-body></div>
+  </dialog>
+</body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "name": "tienda-polos",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Tienda de polos con panel de cliente y panel de administrador",
+  "main": "server.js",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server.js",
+    "dev": "node --watch --disable-warning=ExperimentalWarning server.js",
+    "test": "node --disable-warning=ExperimentalWarning --test"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "multer": "^2.0.2"
+  }
+}
