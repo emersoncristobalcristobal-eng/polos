@@ -1,4 +1,5 @@
 // Consultas reutilizadas por la tienda y el panel de administración.
+// `q` es la base de datos o una transacción abierta: ambas tienen all/get/run.
 
 const { SIZES } = require('./util');
 
@@ -8,11 +9,15 @@ const PRODUCT_SELECT = `
   FROM products p
   LEFT JOIN categories c ON c.id = p.category_id`;
 
-function withStock(db, products) {
-  const stmt = db.prepare('SELECT size, stock FROM product_stock WHERE product_id = ?');
+const placeholders = (list) => list.map(() => '?').join(',') || 'NULL';
+
+// Agrega el stock por talla con una sola consulta para todos los productos.
+async function withStock(q, products) {
+  const ids = products.map((p) => p.id);
+  const rows = await q.all(`SELECT product_id, size, stock FROM product_stock WHERE product_id IN (${placeholders(ids)})`, ...ids);
   return products.map((p) => {
     const stock = Object.fromEntries(SIZES.map((s) => [s, 0]));
-    for (const row of stmt.all(p.id)) stock[row.size] = row.stock;
+    for (const row of rows) if (row.product_id === p.id) stock[row.size] = row.stock;
     return {
       ...p,
       featured: Boolean(p.featured),
@@ -23,9 +28,9 @@ function withStock(db, products) {
   });
 }
 
-function getProduct(db, id) {
-  const row = db.prepare(`${PRODUCT_SELECT} WHERE p.id = ?`).get(id);
-  return row ? withStock(db, [row])[0] : null;
+async function getProduct(q, id) {
+  const row = await q.get(`${PRODUCT_SELECT} WHERE p.id = ?`, id);
+  return row ? (await withStock(q, [row]))[0] : null;
 }
 
 const ORDER_SELECT = `
@@ -34,11 +39,15 @@ const ORDER_SELECT = `
   FROM orders o
   JOIN users u ON u.id = o.user_id`;
 
-function getOrder(db, id) {
-  const order = db.prepare(`${ORDER_SELECT} WHERE o.id = ?`).get(id);
-  if (!order) return null;
-  order.items = db.prepare('SELECT * FROM order_items WHERE order_id = ? ORDER BY id').all(id);
-  return order;
+async function withItems(q, orders) {
+  const ids = orders.map((o) => o.id);
+  const items = await q.all(`SELECT * FROM order_items WHERE order_id IN (${placeholders(ids)}) ORDER BY id`, ...ids);
+  return orders.map((o) => ({ ...o, items: items.filter((it) => it.order_id === o.id) }));
 }
 
-module.exports = { PRODUCT_SELECT, ORDER_SELECT, withStock, getProduct, getOrder };
+async function getOrder(q, id) {
+  const order = await q.get(`${ORDER_SELECT} WHERE o.id = ?`, id);
+  return order ? (await withItems(q, [order]))[0] : null;
+}
+
+module.exports = { PRODUCT_SELECT, ORDER_SELECT, withStock, getProduct, withItems, getOrder };

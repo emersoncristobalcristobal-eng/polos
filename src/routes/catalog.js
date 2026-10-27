@@ -1,6 +1,7 @@
 // Catálogo público: categorías, productos y la configuración de precios.
 
 const { Router } = require('express');
+const { demoMode } = require('../db');
 const { PRODUCT_SELECT, withStock, getProduct } = require('../queries');
 const util = require('../util');
 
@@ -22,20 +23,20 @@ module.exports = ({ db }) => {
       customMaxLength: util.CUSTOM_MAX_LENGTH,
       maxQtyPerLine: util.MAX_QTY_PER_LINE,
       paymentMethods: util.PAYMENT_METHODS,
+      demoAccounts: demoMode(),
     });
   });
 
-  r.get('/categories', (req, res) => {
-    const rows = db.prepare(`
+  r.get('/categories', async (req, res) => {
+    res.json(await db.all(`
       SELECT c.id, c.name, COUNT(p.id) AS count
       FROM categories c
       LEFT JOIN products p ON p.category_id = c.id AND p.active = 1
       GROUP BY c.id
-      ORDER BY c.id`).all();
-    res.json(rows);
+      ORDER BY c.id`));
   });
 
-  r.get('/products', (req, res) => {
+  r.get('/products', async (req, res) => {
     const where = ['p.active = 1'];
     const params = [];
     const category = parseInt(req.query.category, 10);
@@ -60,14 +61,12 @@ module.exports = ({ db }) => {
     }
     const order = SORTS[req.query.sort] || 'p.featured DESC, p.id ASC';
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 100);
-    const rows = db
-      .prepare(`${PRODUCT_SELECT} WHERE ${where.join(' AND ')} ORDER BY ${order} LIMIT ${limit}`)
-      .all(...params);
-    res.json(withStock(db, rows));
+    const rows = await db.all(`${PRODUCT_SELECT} WHERE ${where.join(' AND ')} ORDER BY ${order} LIMIT ${limit}`, ...params);
+    res.json(await withStock(db, rows));
   });
 
-  r.get('/products/:id', (req, res) => {
-    const product = getProduct(db, parseInt(req.params.id, 10) || 0);
+  r.get('/products/:id', async (req, res) => {
+    const product = await getProduct(db, parseInt(req.params.id, 10) || 0);
     if (!product || !product.active) throw new util.HttpError(404, 'Producto no encontrado');
     res.json(product);
   });

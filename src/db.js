@@ -1,8 +1,9 @@
-// Base de datos SQLite (módulo node:sqlite incluido en Node.js 22.13+).
+// Base de datos SQLite. En tu computadora es el archivo data/tienda.db; publicada en internet es una
+// base de datos de Turso (SQLite en la nube). El mismo código funciona en los dos casos.
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { DatabaseSync } = require('node:sqlite');
+const { createClient } = require('@libsql/client');
 const { hashPassword } = require('./auth');
 const { SIZES, CUSTOM_FEE, SHIPPING_COST, FREE_SHIPPING_FROM } = require('./util');
 
@@ -78,6 +79,14 @@ CREATE TABLE IF NOT EXISTS order_items (
   image        TEXT
 );
 
+-- Fotos subidas desde el panel. Se guardan en la base de datos para que no se pierdan en el hosting.
+CREATE TABLE IF NOT EXISTS images (
+  name       TEXT PRIMARY KEY,
+  mime       TEXT NOT NULL,
+  data       BLOB NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_orders_user   ON orders (user_id);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status);
 CREATE INDEX IF NOT EXISTS idx_items_order   ON order_items (order_id);
@@ -122,89 +131,183 @@ const DEMO_PRINTS = {
   'Polo Street Petróleo': 'logo',
 };
 
-// Cambios de estructura para bases de datos creadas con versiones anteriores de la tienda.
-function migrate(db) {
-  const hasColumn = (table, column) => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
-  if (!hasColumn('products', 'print')) {
-    db.exec("ALTER TABLE products ADD COLUMN print TEXT NOT NULL DEFAULT 'ninguno'");
-    const setPrint = db.prepare('UPDATE products SET print = ? WHERE name = ?');
-    for (const [name, print] of Object.entries(DEMO_PRINTS)) setPrint.run(print, name);
+// ---------- Acceso a datos ----------
+const plain = (row) => ({ ...row });
+const cleanArgs = (args) => args.map((v) => (v === undefined ? null : v));
+
+function queries(execute) {
+  return {
+    async all(sql, ...args) {
+      return (await execute(sql, cleanArgs(args))).rows.map(plain);
+    },
+    async get(sql, ...args) {
+      return (await execute(sql, cleanArgs(args))).rows.map(plain)[0] ?? null;
+    },
+    async run(sql, ...args) {
+      const r = await execute(sql, cleanArgs(args));
+      return { changes: r.rowsAffected, lastInsertRowid: Number(r.lastInsertRowid ?? 0) };
+    },
+  };
+}
+
+class Database {
+  constructor(client) {
+    this.client = client;
+    this.writing = Promise.resolve();
+    const { all, get } = queries((sql, args) => client.execute({ sql, args }));
+    const { run } = queries((sql, args) => this.serial(() => client.execute({ sql, args })));
+    Object.assign(this, { all, get, run });
   }
-  if (!hasColumn('order_items', 'print')) {
-    db.exec("ALTER TABLE order_items ADD COLUMN print TEXT NOT NULL DEFAULT 'ninguno'");
-    db.exec('UPDATE order_items SET print = (SELECT print FROM products WHERE id = order_items.product_id) WHERE product_id IS NOT NULL');
+
+  // SQLite acepta un solo escritor a la vez, así que las escrituras de la tienda se atienden en orden.
+  // Dentro de tx() solo se usa el objeto que recibe la función; usar db.run ahí bloquearía la cola.
+  serial(fn) {
+    const result = this.writing.then(fn);
+    this.writing = result.catch(() => {});
+    return result;
+  }
+
+  exec(sql) {
+    return this.serial(() => this.client.executeMultiple(sql));
+  }
+
+  batch(statements) {
+    return this.serial(() =>
+      this.client.batch(statements.map(([sql, ...args]) => ({ sql, args: cleanArgs(args) })), 'write'),
+    );
+  }
+
+  tx(fn) {
+    return this.serial(async () => {
+      const t = await this.client.transaction('write');
+      try {
+        const result = await fn(queries((sql, args) => t.execute({ sql, args })));
+        await t.commit();
+        return result;
+      } catch (err) {
+        await t.rollback().catch(() => {});
+        throw err;
+      } finally {
+        t.close();
+      }
+    });
+  }
+
+  close() {
+    this.client.close();
   }
 }
 
-function openDb(file) {
-  if (file !== ':memory:') fs.mkdirSync(path.dirname(file), { recursive: true });
-  const db = new DatabaseSync(file);
-  db.exec('PRAGMA foreign_keys = ON;');
-  if (file !== ':memory:') db.exec('PRAGMA journal_mode = WAL;');
-  db.exec(SCHEMA);
-  migrate(db);
-  seed(db);
+// Cambios de estructura para bases de datos creadas con versiones anteriores de la tienda.
+async function migrate(db) {
+  const hasColumn = async (table, column) =>
+    Boolean(await db.get(`SELECT 1 FROM pragma_table_info('${table}') WHERE name = ?`, column));
+  if (!(await hasColumn('products', 'print'))) {
+    await db.run("ALTER TABLE products ADD COLUMN print TEXT NOT NULL DEFAULT 'ninguno'");
+    for (const [name, print] of Object.entries(DEMO_PRINTS)) {
+      await db.run('UPDATE products SET print = ? WHERE name = ?', print, name);
+    }
+  }
+  if (!(await hasColumn('order_items', 'print'))) {
+    await db.run("ALTER TABLE order_items ADD COLUMN print TEXT NOT NULL DEFAULT 'ninguno'");
+    await db.run('UPDATE order_items SET print = (SELECT print FROM products WHERE id = order_items.product_id) WHERE product_id IS NOT NULL');
+  }
+}
+
+// Las versiones anteriores guardaban las fotos en data/uploads: se copian a la base de datos.
+const IMAGE_MIME = { '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp' };
+async function importUploads(db, dir) {
+  let files = [];
+  try {
+    files = fs.readdirSync(dir);
+  } catch {
+    return;
+  }
+  for (const name of files) {
+    const mime = IMAGE_MIME[path.extname(name).toLowerCase()];
+    if (!mime || !/^[a-f0-9]+\.(jpg|png|webp)$/.test(name)) continue;
+    if (await db.get('SELECT 1 FROM images WHERE name = ?', name)) continue;
+    await db.run('INSERT INTO images (name, mime, data) VALUES (?, ?, ?)', name, mime, fs.readFileSync(path.join(dir, name)));
+  }
+}
+
+// Ruta local como URL de libsql ("file:data/tienda.db"), con barras normales también en Windows.
+function fileUrl(file) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const relative = path.relative(process.cwd(), file);
+  const target = path.isAbsolute(relative) ? file : relative;
+  return `file:${target.split(path.sep).join('/')}`;
+}
+
+async function openDb({ file, url, authToken, uploadsDir } = {}) {
+  const local = !url;
+  const db = new Database(createClient({ url: url || fileUrl(file), authToken }));
+  if (local) await db.get('PRAGMA journal_mode = WAL');
+  await db.exec(SCHEMA);
+  await migrate(db);
+  await seed(db);
+  if (uploadsDir) await importUploads(db, uploadsDir);
   return db;
 }
 
-function seed(db) {
-  const { n } = db.prepare('SELECT COUNT(*) AS n FROM users').get();
-  if (n > 0) return;
+// Sin ADMIN_PASSWORD la tienda está en modo de prueba: cuentas de ejemplo visibles en la página de ingreso.
+const demoMode = () => !process.env.ADMIN_PASSWORD;
 
-  const adminEmail = (process.env.ADMIN_EMAIL || 'admin@pololab.pe').toLowerCase();
+// Datos iniciales de una tienda nueva. Se insertan en un solo lote (una sola ida a la base de datos).
+async function seed(db) {
+  if ((await db.get('SELECT COUNT(*) AS n FROM users')).n > 0) return;
+
+  const adminEmail = (process.env.ADMIN_EMAIL || 'admin@pololab.pe').trim().toLowerCase();
   const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
-  const insertUser = db.prepare('INSERT INTO users (name, email, password_hash, role, phone) VALUES (?, ?, ?, ?, ?)');
-  insertUser.run('Administrador', adminEmail, hashPassword(adminPassword), 'admin', '');
+  const sql = [['INSERT INTO users (id, name, email, password_hash, role, phone) VALUES (1, ?, ?, ?, ?, ?)',
+    'Administrador', adminEmail, hashPassword(adminPassword), 'admin', '']];
 
-  if (process.env.SEED_DEMO === '0') return;
+  if (process.env.SEED_DEMO !== '0') {
+    DEMO_CATEGORIES.forEach((name, i) => sql.push(['INSERT INTO categories (id, name) VALUES (?, ?)', i + 1, name]));
+    const products = DEMO_PRODUCTS.map(([name, cat, price, color, accent, design, featured, stock, description], i) => {
+      const p = { id: i + 1, name, price: Math.round(price * 100), color, accent, design, print: DEMO_PRINTS[name] || 'ninguno' };
+      sql.push([`INSERT INTO products (id, name, description, price, category_id, color, accent, design, print, featured)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        p.id, name, description, p.price, DEMO_CATEGORIES.indexOf(cat) + 1, color, accent, design, p.print, featured]);
+      SIZES.forEach((size, s) => sql.push(['INSERT INTO product_stock (product_id, size, stock) VALUES (?, ?, ?)', p.id, size, stock[s]]));
+      return p;
+    });
 
-  const demoUser = insertUser.run('Cliente Demo', 'cliente@pololab.pe', hashPassword('cliente123'), 'cliente', '987654321');
-  const insertCategory = db.prepare('INSERT INTO categories (name) VALUES (?)');
-  const categoryIds = Object.fromEntries(DEMO_CATEGORIES.map((c) => [c, insertCategory.run(c).lastInsertRowid]));
-
-  const insertProduct = db.prepare(`
-    INSERT INTO products (name, description, price, category_id, color, accent, design, print, featured)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-  const insertStock = db.prepare('INSERT INTO product_stock (product_id, size, stock) VALUES (?, ?, ?)');
-  const products = [];
-  for (const [name, cat, price, color, accent, design, featured, stock, description] of DEMO_PRODUCTS) {
-    const print = DEMO_PRINTS[name] || 'ninguno';
-    const id = insertProduct.run(name, description, Math.round(price * 100), categoryIds[cat], color, accent, design, print, featured).lastInsertRowid;
-    SIZES.forEach((size, i) => insertStock.run(id, size, stock[i]));
-    products.push({ id, name, price: Math.round(price * 100), color, accent, design, print });
-  }
-
-  // Algunos pedidos de ejemplo para que el panel de administración no empiece vacío.
-  const demoOrders = [
-    { daysAgo: 6, status: 'entregado', lines: [[0, 'M', 1, ''], [7, 'L', 2, '']] },
-    { daysAgo: 5, status: 'entregado', lines: [[2, 'S', 1, 'EMERSON']] },
-    { daysAgo: 4, status: 'enviado', lines: [[1, 'L', 1, ''], [10, 'M', 1, '']] },
-    { daysAgo: 3, status: 'cancelado', lines: [[5, 'XL', 1, '']] },
-    { daysAgo: 2, status: 'pagado', lines: [[3, 'L', 2, ''], [8, 'M', 1, '']] },
-    { daysAgo: 1, status: 'pagado', lines: [[0, 'S', 1, 'LIMA'], [6, 'M', 1, '']] },
-    { daysAgo: 0, status: 'pendiente', lines: [[1, 'M', 1, '10']] },
-  ];
-  const insertOrder = db.prepare(`
-    INSERT INTO orders (user_id, status, subtotal, shipping, total, ship_name, ship_phone, ship_address, ship_city,
-                        payment_method, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, 'Cliente Demo', '987654321', 'Av. Arequipa 1234, Dpto. 502', 'Lima', ?,
-            datetime('now', ?), datetime('now', ?))`);
-  const insertItem = db.prepare(`
-    INSERT INTO order_items (order_id, product_id, product_name, size, quantity, unit_price, custom_text, color, accent, design, print)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-  const payments = ['yape', 'transferencia', 'contraentrega'];
-  demoOrders.forEach((o, i) => {
-    const lines = o.lines.map(([idx, size, qty, custom]) => ({
-      p: products[idx], size, qty, custom, unit: products[idx].price + (custom ? CUSTOM_FEE : 0),
-    }));
-    const subtotal = lines.reduce((s, l) => s + l.unit * l.qty, 0);
-    const shipping = subtotal >= FREE_SHIPPING_FROM ? 0 : SHIPPING_COST;
-    const when = `-${o.daysAgo * 24 + 3 + i} hours`;
-    const orderId = insertOrder.run(demoUser.lastInsertRowid, o.status, subtotal, shipping, subtotal + shipping, payments[i % 3], when, when).lastInsertRowid;
-    for (const l of lines) {
-      insertItem.run(orderId, l.p.id, l.p.name, l.size, l.qty, l.unit, l.custom, l.p.color, l.p.accent, l.p.design, l.p.print);
+    // Cliente y pedidos de ejemplo solo en modo de prueba, para que el panel no empiece vacío.
+    if (demoMode()) {
+      sql.push(['INSERT INTO users (id, name, email, password_hash, role, phone) VALUES (2, ?, ?, ?, ?, ?)',
+        'Cliente Demo', 'cliente@pololab.pe', hashPassword('cliente123'), 'cliente', '987654321']);
+      const demoOrders = [
+        { daysAgo: 6, status: 'entregado', lines: [[0, 'M', 1, ''], [7, 'L', 2, '']] },
+        { daysAgo: 5, status: 'entregado', lines: [[2, 'S', 1, 'EMERSON']] },
+        { daysAgo: 4, status: 'enviado', lines: [[1, 'L', 1, ''], [10, 'M', 1, '']] },
+        { daysAgo: 3, status: 'cancelado', lines: [[5, 'XL', 1, '']] },
+        { daysAgo: 2, status: 'pagado', lines: [[3, 'L', 2, ''], [8, 'M', 1, '']] },
+        { daysAgo: 1, status: 'pagado', lines: [[0, 'S', 1, 'LIMA'], [6, 'M', 1, '']] },
+        { daysAgo: 0, status: 'pendiente', lines: [[1, 'M', 1, '10']] },
+      ];
+      const payments = ['yape', 'transferencia', 'contraentrega'];
+      demoOrders.forEach((o, i) => {
+        const lines = o.lines.map(([idx, size, qty, custom]) => ({
+          p: products[idx], size, qty, custom, unit: products[idx].price + (custom ? CUSTOM_FEE : 0),
+        }));
+        const subtotal = lines.reduce((sum, l) => sum + l.unit * l.qty, 0);
+        const shipping = subtotal >= FREE_SHIPPING_FROM ? 0 : SHIPPING_COST;
+        const when = `-${o.daysAgo * 24 + 3 + i} hours`;
+        sql.push([`INSERT INTO orders (id, user_id, status, subtotal, shipping, total, ship_name, ship_phone, ship_address, ship_city,
+                                       payment_method, created_at, updated_at)
+                   VALUES (?, 2, ?, ?, ?, ?, 'Cliente Demo', '987654321', 'Av. Arequipa 1234, Dpto. 502', 'Lima', ?,
+                           datetime('now', ?), datetime('now', ?))`,
+          i + 1, o.status, subtotal, shipping, subtotal + shipping, payments[i % 3], when, when]);
+        for (const l of lines) {
+          sql.push([`INSERT INTO order_items (order_id, product_id, product_name, size, quantity, unit_price, custom_text, color, accent, design, print)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            i + 1, l.p.id, l.p.name, l.size, l.qty, l.unit, l.custom, l.p.color, l.p.accent, l.p.design, l.p.print]);
+        }
+      });
     }
-  });
+  }
+  await db.batch(sql);
 }
 
-module.exports = { openDb };
+module.exports = { openDb, demoMode };

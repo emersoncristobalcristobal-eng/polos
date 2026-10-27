@@ -2,7 +2,7 @@
 
 const { Router } = require('express');
 const { requireUser } = require('../auth');
-const { ORDER_SELECT, getOrder } = require('../queries');
+const { ORDER_SELECT, getOrder, withItems } = require('../queries');
 const util = require('../util');
 
 const { HttpError } = util;
@@ -11,7 +11,7 @@ module.exports = ({ db }) => {
   const r = Router();
   r.use(requireUser);
 
-  r.post('/', (req, res) => {
+  r.post('/', async (req, res) => {
     const { items, shipping = {}, payment_method: paymentMethod, notes } = req.body;
     if (!Array.isArray(items) || items.length === 0) throw new HttpError(400, 'Tu carrito está vacío');
     if (items.length > 30) throw new HttpError(400, 'Demasiados productos en un solo pedido');
@@ -24,69 +24,66 @@ module.exports = ({ db }) => {
     };
     util.oneOf(paymentMethod, util.PAYMENT_METHODS, 'método de pago');
     const orderNotes = util.text(notes, { field: 'notas', max: 300, required: false });
+    const lines = items.map((item) => ({
+      productId: util.int(item?.product_id, { field: 'producto', min: 1 }),
+      size: util.oneOf(item.size, util.SIZES, 'talla'),
+      quantity: util.int(item.quantity, { field: 'cantidad', min: 1, max: util.MAX_QTY_PER_LINE }),
+      custom: util.customText(item.custom_text),
+    }));
 
-    const findProduct = db.prepare('SELECT id, name, price, color, accent, design, print, image, active FROM products WHERE id = ?');
-    const takeStock = db.prepare(
-      'UPDATE product_stock SET stock = stock - ? WHERE product_id = ? AND size = ? AND stock >= ?',
-    );
-
-    const orderId = util.tx(db, () => {
-      const lines = [];
-      for (const item of items) {
-        const productId = util.int(item?.product_id, { field: 'producto', min: 1 });
-        const size = util.oneOf(item.size, util.SIZES, 'talla');
-        const quantity = util.int(item.quantity, { field: 'cantidad', min: 1, max: util.MAX_QTY_PER_LINE });
-        const custom = util.customText(item.custom_text);
-
-        const p = findProduct.get(productId);
-        if (!p || !p.active) throw new HttpError(400, 'Un producto de tu carrito ya no está disponible');
-        if (takeStock.run(quantity, productId, size, quantity).changes !== 1) {
-          throw new HttpError(409, `No hay stock suficiente de "${p.name}" en talla ${size}`);
-        }
-        lines.push({ p, size, quantity, custom, unit: p.price + (custom ? util.CUSTOM_FEE : 0) });
+    // El stock se descuenta dentro de la transacción: si una línea falla, no se descuenta nada.
+    const orderId = await db.tx(async (t) => {
+      for (const line of lines) {
+        line.p = await t.get('SELECT id, name, price, color, accent, design, print, image, active FROM products WHERE id = ?', line.productId);
+        if (!line.p || !line.p.active) throw new HttpError(400, 'Un producto de tu carrito ya no está disponible');
+        const taken = await t.run(
+          'UPDATE product_stock SET stock = stock - ? WHERE product_id = ? AND size = ? AND stock >= ?',
+          line.quantity, line.productId, line.size, line.quantity,
+        );
+        if (taken.changes !== 1) throw new HttpError(409, `No hay stock suficiente de "${line.p.name}" en talla ${line.size}`);
+        line.unit = line.p.price + (line.custom ? util.CUSTOM_FEE : 0);
       }
 
       const subtotal = lines.reduce((sum, l) => sum + l.unit * l.quantity, 0);
       const shippingCost = subtotal >= util.FREE_SHIPPING_FROM ? 0 : util.SHIPPING_COST;
-      const { lastInsertRowid: id } = db.prepare(`
+      const { lastInsertRowid: id } = await t.run(`
         INSERT INTO orders (user_id, subtotal, shipping, total, ship_name, ship_phone, ship_address, ship_city, payment_method, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run(req.user.id, subtotal, shippingCost, subtotal + shippingCost, ship.name, ship.phone, ship.address, ship.city, paymentMethod, orderNotes);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      req.user.id, subtotal, shippingCost, subtotal + shippingCost, ship.name, ship.phone, ship.address, ship.city, paymentMethod, orderNotes);
 
-      const insertItem = db.prepare(`
-        INSERT INTO order_items (order_id, product_id, product_name, size, quantity, unit_price, custom_text, color, accent, design, print, image)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
       for (const l of lines) {
-        insertItem.run(id, l.p.id, l.p.name, l.size, l.quantity, l.unit, l.custom, l.p.color, l.p.accent, l.p.design, l.p.print, l.p.image);
+        await t.run(`
+          INSERT INTO order_items (order_id, product_id, product_name, size, quantity, unit_price, custom_text, color, accent, design, print, image)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, l.p.id, l.p.name, l.size, l.quantity, l.unit, l.custom, l.p.color, l.p.accent, l.p.design, l.p.print, l.p.image);
       }
       return id;
     });
 
-    res.status(201).json(getOrder(db, orderId));
+    res.status(201).json(await getOrder(db, orderId));
   });
 
-  r.get('/', (req, res) => {
-    const orders = db.prepare(`${ORDER_SELECT} WHERE o.user_id = ? ORDER BY o.id DESC`).all(req.user.id);
-    const items = db.prepare('SELECT * FROM order_items WHERE order_id = ? ORDER BY id');
-    res.json(orders.map((o) => ({ ...o, items: items.all(o.id) })));
+  r.get('/', async (req, res) => {
+    const orders = await db.all(`${ORDER_SELECT} WHERE o.user_id = ? ORDER BY o.id DESC`, req.user.id);
+    res.json(await withItems(db, orders));
   });
 
-  r.get('/:id', (req, res) => {
-    const order = getOrder(db, parseInt(req.params.id, 10) || 0);
+  r.get('/:id', async (req, res) => {
+    const order = await getOrder(db, parseInt(req.params.id, 10) || 0);
     if (!order || order.user_id !== req.user.id) throw new HttpError(404, 'Pedido no encontrado');
     res.json(order);
   });
 
-  r.post('/:id/cancel', (req, res) => {
+  r.post('/:id/cancel', async (req, res) => {
     const id = parseInt(req.params.id, 10) || 0;
-    util.tx(db, () => {
-      const order = getOrder(db, id);
+    await db.tx(async (t) => {
+      const order = await getOrder(t, id);
       if (!order || order.user_id !== req.user.id) throw new HttpError(404, 'Pedido no encontrado');
       if (order.status !== 'pendiente') throw new HttpError(409, 'Solo puedes cancelar pedidos pendientes');
-      util.restock(db, order.items);
-      db.prepare("UPDATE orders SET status = 'cancelado', updated_at = datetime('now') WHERE id = ?").run(id);
+      await util.restock(t, order.items);
+      await t.run("UPDATE orders SET status = 'cancelado', updated_at = datetime('now') WHERE id = ?", id);
     });
-    res.json(getOrder(db, id));
+    res.json(await getOrder(db, id));
   });
 
   return r;

@@ -1,0 +1,27 @@
+# Configuración para publicar la tienda gratis en Render (https://render.com).
+# Render la lee al crear un "Blueprint" desde este repositorio. Guía paso a paso: docs/PUBLICAR.md
+services:
+  - type: web
+    name: pololab
+    runtime: node
+    plan: free
+    region: virginia
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/config
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: TRUST_PROXY
+        value: "1"
+      - key: SESSION_SECRET
+        generateValue: true
+      # Render te pedirá estos valores al crear el Blueprint (no se guardan en GitHub).
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false

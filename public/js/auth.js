@@ -1,4 +1,4 @@
-import { api, getMe, mountChrome, poloSVG, qs, qsa, safeNext } from './core.js';
+import { api, getConfig, getMe, mountChrome, poloSVG, qs, qsa, safeNext } from './core.js';
 
 const form = qs('[data-auth-form]');
 const mode = form.dataset.authForm;
@@ -15,6 +15,9 @@ qs('[data-auth-polo]').innerHTML = poloSVG({
 // Si ya hay sesión, no tiene sentido mostrar el formulario.
 const current = await getMe();
 if (current) location.replace(safeNext(next, current.role === 'admin' ? '/admin.html' : '/cuenta.html'));
+
+// Las cuentas de prueba solo se muestran cuando la tienda no tiene una contraseña de administrador propia.
+if ((await getConfig()).demoAccounts) qs('[data-demo-box]')?.removeAttribute('hidden');
 
 // Mantener el destino al cambiar entre "ingresar" y "crear cuenta".
 if (next) {

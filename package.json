@@ -5,14 +5,15 @@
   "description": "Tienda de polos con panel de cliente y panel de administrador",
   "main": "server.js",
   "engines": {
-    "node": ">=22.13"
+    "node": ">=20"
   },
   "scripts": {
-    "start": "node --disable-warning=ExperimentalWarning server.js",
-    "dev": "node --watch --disable-warning=ExperimentalWarning server.js",
-    "test": "node --disable-warning=ExperimentalWarning --test"
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test"
   },
   "dependencies": {
+    "@libsql/client": "^0.18.0",
     "express": "^5.1.0",
     "multer": "^2.0.2"
   }

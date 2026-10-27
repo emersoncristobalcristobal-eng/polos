@@ -10,7 +10,7 @@ let base;
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tienda-test-'));
 
 before(async () => {
-  const app = createApp({ dataDir, dbFile: ':memory:' });
+  const app = await createApp({ dataDir });
   server = app.listen(0);
   await new Promise((resolve) => server.once('listening', resolve));
   base = `http://127.0.0.1:${server.address().port}`;
@@ -201,19 +201,62 @@ test('rechaza peticiones que vienen de otro sitio', async () => {
   assert.equal(res.status, 403);
 });
 
-test('una base de datos anterior a los estampados se actualiza sin perder datos', () => {
+test('una base de datos anterior a los estampados se actualiza sin perder datos', async () => {
   const { openDb } = require('../src/db');
   const file = path.join(dataDir, 'antigua.db');
-  const old = openDb(file);
-  old.exec('ALTER TABLE order_items DROP COLUMN print; ALTER TABLE products DROP COLUMN print;');
-  const products = old.prepare('SELECT COUNT(*) AS n FROM products').get().n;
+  const old = await openDb({ file });
+  await old.exec('ALTER TABLE order_items DROP COLUMN print; ALTER TABLE products DROP COLUMN print; DROP TABLE images;');
+  const { n: products } = await old.get('SELECT COUNT(*) AS n FROM products');
   old.close();
 
-  const db = openDb(file);
-  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM products').get().n, products);
-  assert.equal(db.prepare("SELECT print FROM products WHERE name = 'Polo Lima 26 Negro'").get().print, 'lima26');
-  assert.equal(db.prepare("SELECT print FROM products WHERE name = 'Polo Básico Negro'").get().print, 'ninguno');
-  const item = db.prepare("SELECT print FROM order_items WHERE product_name = 'Polo Lima 26 Negro' LIMIT 1").get();
-  assert.equal(item.print, 'lima26');
+  // Las fotos de versiones anteriores estaban en data/uploads y pasan a la base de datos.
+  const uploads = path.join(dataDir, 'uploads-antiguas');
+  fs.mkdirSync(uploads, { recursive: true });
+  fs.writeFileSync(path.join(uploads, 'abc123.png'), Buffer.from([1, 2, 3]));
+
+  const db = await openDb({ file, uploadsDir: uploads });
+  assert.equal((await db.get('SELECT COUNT(*) AS n FROM products')).n, products);
+  assert.equal((await db.get("SELECT print FROM products WHERE name = 'Polo Lima 26 Negro'")).print, 'lima26');
+  assert.equal((await db.get("SELECT print FROM products WHERE name = 'Polo Básico Negro'")).print, 'ninguno');
+  assert.equal((await db.get("SELECT print FROM order_items WHERE product_name = 'Polo Lima 26 Negro' LIMIT 1")).print, 'lima26');
+  const image = await db.get("SELECT mime, length(data) AS size FROM images WHERE name = 'abc123.png'");
+  assert.deepEqual(image, { mime: 'image/png', size: 3 });
   db.close();
+});
+
+test('demasiados intentos de contraseña bloquean el ingreso por un rato', async () => {
+  const http = client();
+  for (let i = 0; i < 8; i++) {
+    assert.equal((await http('POST', '/api/auth/login', { email: 'cliente@pololab.pe', password: 'mala' })).status, 401);
+  }
+  const blocked = await http('POST', '/api/auth/login', { email: 'cliente@pololab.pe', password: 'cliente123' });
+  assert.equal(blocked.status, 429);
+});
+
+test('con ADMIN_PASSWORD la tienda no crea ni muestra cuentas de prueba', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tienda-prod-'));
+  process.env.ADMIN_PASSWORD = 'clave-segura-123';
+  process.env.ADMIN_EMAIL = 'dueno@tienda.pe';
+  try {
+    const app = await createApp({ dataDir: dir });
+    const srv = app.listen(0);
+    await new Promise((resolve) => srv.once('listening', resolve));
+    const url = `http://127.0.0.1:${srv.address().port}`;
+    const config = await (await fetch(`${url}/api/config`)).json();
+    assert.equal(config.demoAccounts, false);
+    const login = (email, password) => fetch(`${url}/api/auth/login`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }),
+    });
+    assert.equal((await login('admin@pololab.pe', 'admin123')).status, 401);
+    assert.equal((await login('cliente@pololab.pe', 'cliente123')).status, 401);
+    assert.equal((await login('dueno@tienda.pe', 'clave-segura-123')).status, 200);
+    const products = await (await fetch(`${url}/api/products`)).json();
+    assert.ok(products.length > 0);
+    srv.close();
+    app.locals.db.close();
+  } finally {
+    delete process.env.ADMIN_PASSWORD;
+    delete process.env.ADMIN_EMAIL;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

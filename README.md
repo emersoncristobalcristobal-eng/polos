@@ -11,11 +11,15 @@ Tienda online de polos con estética cinematográfica: escenario oscuro, luces d
 |---|---|---|
 | ![Tienda](docs/capturas/tienda.jpg) | ![Producto](docs/capturas/producto.jpg) | ![Admin](docs/capturas/admin.jpg) |
 
-## Cómo ejecutarlo
+## Publicarla en internet
+
+Para tener un enlace propio (por ejemplo `https://pololab.onrender.com`) que cualquiera pueda abrir, sigue la guía **[docs/PUBLICAR.md](docs/PUBLICAR.md)**. Usa Render y Turso, los dos con plan gratuito, y toma unos 15 minutos.
+
+## Cómo ejecutarlo en tu computadora
 
 La tienda funciona mientras el servidor esté encendido **en tu computadora**. Si abres `localhost:3000` sin haberlo iniciado, el navegador muestra "localhost rechazó la conexión".
 
-Requisito: **Node.js 22.13 o superior** (versión LTS de <https://nodejs.org>). No hace falta instalar MySQL: usa la base de datos SQLite incluida en Node.
+Requisito: **Node.js 20 o superior** (versión LTS de <https://nodejs.org>). No hace falta instalar MySQL: en tu computadora los datos se guardan en el archivo `data/tienda.db` (SQLite).
 
 ### En Windows (lo más fácil)
 
@@ -40,7 +44,7 @@ Abre <http://localhost:3000>. La primera vez se crea la base de datos `data/tien
 | Administrador | `admin@pololab.pe` | `admin123` |
 | Cliente | `cliente@pololab.pe` | `cliente123` |
 
-En la página de ingreso hay botones para entrar con cada una. **Cambia la contraseña del administrador** antes de publicar la tienda (Panel → Mi perfil).
+En la página de ingreso hay botones para entrar con cada una. Estas cuentas existen solo en modo de prueba: cuando la tienda se publica con `ADMIN_PASSWORD`, no se crean ni se muestran.
 
 ## Qué puede hacer cada usuario
 
@@ -73,7 +77,8 @@ En la página de ingreso hay botones para entrar con cada una. **Cambia la contr
 server.js              Arranque del servidor
 src/
   app.js               Configuración de Express, sesión y seguridad
-  db.js                Tablas SQLite y datos de ejemplo
+  db.js                Tablas, migraciones y datos de ejemplo (SQLite local o Turso)
+  limiter.js           Límite de intentos de ingreso
   auth.js              Contraseñas (scrypt) y sesiones con cookie firmada
   util.js              Validaciones y reglas de negocio
   queries.js           Consultas compartidas
@@ -105,9 +110,12 @@ test/api.test.js       Pruebas de la API
 | Variable | Para qué sirve | Por defecto |
 |---|---|---|
 | `PORT` | Puerto del servidor | `3000` |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Administrador que se crea la primera vez | `admin@pololab.pe` / `admin123` |
-| `SEED_DEMO` | Pon `0` para no crear productos ni pedidos de ejemplo | `1` |
+| `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` | Base de datos en internet (Turso). Sin ellas se usa `data/tienda.db` | — |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Administrador que se crea la primera vez. Con `ADMIN_PASSWORD` la tienda sale del modo de prueba | `admin@pololab.pe` / `admin123` |
+| `SEED_DEMO` | Pon `0` para no crear productos de ejemplo | `1` |
 | `SESSION_SECRET` | Clave para firmar las sesiones (si no se define, se genera en `data/secret.key`) | generada |
+| `TRUST_PROXY` | Pon `1` cuando la tienda está detrás del proxy HTTPS del hosting | — |
+| `DATA_DIR` | Carpeta para `tienda.db` y la clave de sesiones | `data/` |
 | `STORE_UTC_OFFSET` | Zona horaria para agrupar las ventas por día | `-5` (Perú) |
 
 ## Pruebas
@@ -116,4 +124,4 @@ test/api.test.js       Pruebas de la API
 npm test
 ```
 
-Cubren registro e ingreso, compra con descuento de stock, compras sin stock suficiente, cancelaciones que devuelven el stock, permisos del administrador, subida de imágenes y bloqueo de clientes.
+Cubren registro e ingreso, compra con descuento de stock, compras sin stock suficiente, cancelaciones que devuelven el stock, permisos del administrador, subida de imágenes, bloqueo de clientes, límite de intentos de ingreso, actualización de tiendas antiguas y el modo publicado sin cuentas de prueba.

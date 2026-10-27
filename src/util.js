@@ -73,24 +73,15 @@ function customText(value) {
     .slice(0, CUSTOM_MAX_LENGTH);
 }
 
-function tx(db, fn) {
-  db.exec('BEGIN IMMEDIATE');
-  try {
-    const result = fn();
-    db.exec('COMMIT');
-    return result;
-  } catch (err) {
-    db.exec('ROLLBACK');
-    throw err;
-  }
-}
-
-function restock(db, items) {
-  const stmt = db.prepare(`
-    INSERT INTO product_stock (product_id, size, stock) VALUES (?, ?, ?)
-    ON CONFLICT (product_id, size) DO UPDATE SET stock = stock + excluded.stock`);
+// Devuelve al inventario las unidades de un pedido cancelado (solo de productos que aún existen).
+async function restock(q, items) {
   for (const it of items) {
-    if (it.product_id != null) stmt.run(it.product_id, it.size, it.quantity);
+    if (it.product_id == null) continue;
+    await q.run(`
+      INSERT INTO product_stock (product_id, size, stock)
+      SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM products WHERE id = ?)
+      ON CONFLICT (product_id, size) DO UPDATE SET stock = stock + excluded.stock`,
+    it.product_id, it.size, it.quantity, it.product_id);
   }
 }
 
@@ -114,6 +105,5 @@ module.exports = {
   oneOf,
   bool,
   customText,
-  tx,
   restock,
 };

@@ -16,21 +16,27 @@ function loadSecret(dataDir) {
     return fs.readFileSync(file, 'utf8').trim();
   } catch {
     const secret = crypto.randomBytes(32).toString('hex');
+    fs.mkdirSync(dataDir, { recursive: true });
     fs.writeFileSync(file, secret, { mode: 0o600 });
     return secret;
   }
 }
 
-function createApp({ dataDir = path.join(__dirname, '..', 'data'), dbFile } = {}) {
-  const uploadsDir = path.join(dataDir, 'uploads');
-  fs.mkdirSync(uploadsDir, { recursive: true });
-  const db = openDb(dbFile ?? path.join(dataDir, 'tienda.db'));
+// Sin TURSO_DATABASE_URL la tienda usa el archivo data/tienda.db de esta computadora.
+async function createApp({ dataDir = process.env.DATA_DIR || path.join(__dirname, '..', 'data'), dbFile } = {}) {
+  const db = await openDb({
+    url: process.env.TURSO_DATABASE_URL,
+    authToken: process.env.TURSO_AUTH_TOKEN,
+    file: dbFile ?? path.join(dataDir, 'tienda.db'),
+    uploadsDir: path.join(dataDir, 'uploads'),
+  });
   const tokens = createTokens(loadSecret(dataDir));
-  const ctx = { db, tokens, uploadsDir };
+  const ctx = { db, tokens };
 
   const app = express();
   app.disable('x-powered-by');
-  app.set('trust proxy', 'loopback');
+  // En el hosting la tienda está detrás de un proxy que atiende HTTPS.
+  app.set('trust proxy', process.env.TRUST_PROXY === '1' ? 1 : 'loopback');
   app.locals.db = db;
 
   app.use((req, res, next) => {
@@ -56,10 +62,13 @@ function createApp({ dataDir = path.join(__dirname, '..', 'data'), dbFile } = {}
     next();
   });
 
-  const findUser = db.prepare('SELECT id, name, email, role, phone FROM users WHERE id = ? AND active = 1');
-  app.use((req, res, next) => {
+  // La sesión solo se consulta donde hace falta (API y panel), no para cada CSS, JS o imagen.
+  app.use(async (req, res, next) => {
+    if (!req.path.startsWith('/api') && !req.path.startsWith('/admin')) return next();
     const session = tokens.read(parseCookies(req.headers.cookie)[SESSION_COOKIE]);
-    req.user = session ? findUser.get(session.uid) ?? null : null;
+    req.user = session
+      ? await db.get('SELECT id, name, email, role, phone FROM users WHERE id = ? AND active = 1', session.uid)
+      : null;
     next();
   });
 
@@ -76,7 +85,14 @@ function createApp({ dataDir = path.join(__dirname, '..', 'data'), dbFile } = {}
     next();
   });
 
-  app.use('/uploads', express.static(uploadsDir, { maxAge: '7d' }));
+  // Fotos de productos guardadas en la base de datos. El nombre es aleatorio y nunca cambia.
+  app.get('/uploads/:name', async (req, res, next) => {
+    const image = await db.get('SELECT mime, data FROM images WHERE name = ?', req.params.name);
+    if (!image) return next();
+    res.set('Cache-Control', 'public, max-age=604800, immutable');
+    res.type(image.mime).send(Buffer.from(image.data));
+  });
+
   app.use(express.static(PUBLIC_DIR, { extensions: ['html'] }));
   app.use((req, res) => res.status(404).sendFile(path.join(PUBLIC_DIR, '404.html')));
 

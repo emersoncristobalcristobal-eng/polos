@@ -5,8 +5,8 @@ cd /d "%~dp0"
 where node >/dev/null 2>nul
 if errorlevel 1 goto sin_node
 
-if exist node_modules goto iniciar
-echo Instalando dependencias por primera vez, espera un momento...
+if exist node_modules\@libsql\client goto iniciar
+echo Instalando dependencias, espera un momento...
 call npm install
 if errorlevel 1 goto error_instalar
 
