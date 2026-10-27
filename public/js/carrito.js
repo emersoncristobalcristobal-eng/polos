@@ -43,7 +43,7 @@ function lineHTML(item, index) {
   const stock = p.stock[item.size];
   const warn = stock === 0 ? 'Talla agotada. Quítala o elige otra.' : item.qty > stock ? `Solo quedan ${stock} en talla ${item.size}.` : '';
   return `<div class="cart-line">
-    <a class="cart-thumb" href="/producto.html?id=${p.id}">${productVisual(p, { text: item.custom })}</a>
+    <a class="cart-thumb" href="/producto.html?id=${p.id}">${productVisual(p, { text: item.custom, view: item.custom ? 'back' : 'front' })}</a>
     <div>
       <h3><a href="/producto.html?id=${p.id}">${esc(p.name)}</a></h3>
       <div class="cart-meta">

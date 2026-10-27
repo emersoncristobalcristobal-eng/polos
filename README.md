@@ -1,6 +1,6 @@
 # POLOLAB · Tienda de polos
 
-Tienda online de polos con estética cinematográfica: escenario oscuro, luces de neón, efectos *glitch* al hacer scroll y personalización del polo con tu nombre. Tiene dos sistemas:
+Tienda online de polos con estética cinematográfica: escenario oscuro, luces de neón, efectos *glitch* al hacer scroll y personalización del polo con tu nombre. Los polos se dibujan como maquetas realistas (pliegues, textura de algodón, cuello acanalado, costuras y estampados) con vista de frente y de espalda. Tiene dos sistemas:
 
 - **Cliente:** catálogo, detalle del producto, carrito, compra y seguimiento de pedidos.
 - **Administrador:** dashboard de ventas, productos, pedidos, categorías y clientes.
@@ -47,14 +47,15 @@ En la página de ingreso hay botones para entrar con cada una. **Cambia la contr
 ### Cliente
 - Ver la página de inicio con la colección destacada y los capítulos animados.
 - Buscar, filtrar por categoría y ordenar por precio en la tienda.
-- Elegir talla (S, M, L, XL) según el stock real, cantidad y **estampar su nombre** en el polo (+S/ 10), con vista previa en vivo.
+- Ver cada polo de frente y de espalda (en la tienda, la espalda aparece al pasar el mouse) e inclinarlo en 3D con el mouse.
+- Elegir talla (S, M, L, XL) según el stock real, cantidad y **estampar su nombre en la espalda** (+S/ 10), con vista previa en vivo.
 - Usar el carrito sin registrarse; para pagar debe crear una cuenta o ingresar.
 - Confirmar el pedido con datos de envío y método de pago (Yape/Plin, transferencia o contra entrega).
 - Ver sus pedidos con el seguimiento (recibido → pagado → en camino → entregado), cancelar los que están pendientes y editar sus datos o contraseña.
 
 ### Administrador
 - **Dashboard:** ventas totales, pedidos, ticket promedio, pedidos por atender, gráfico de ventas de los últimos 7 días, más vendidos, stock bajo y pedidos recientes.
-- **Productos:** crear, editar, ocultar y eliminar. Cada producto tiene precio, categoría, colores, diseño (liso, franja central o líneas en hombros), stock por talla y foto opcional. Si no sube foto, la tienda dibuja el polo con los colores elegidos.
+- **Productos:** crear, editar, ocultar y eliminar. Cada producto tiene precio, categoría, colores, diseño (liso, franja central o líneas en hombros), estampado en el pecho (logo, Lima 26 college, atardecer neón u ola del Pacífico), stock por talla y foto opcional. Si no sube foto, la tienda dibuja el polo con los colores y el estampado elegidos, con vista previa de frente y espalda.
 - **Pedidos:** filtrar por estado, buscar por número o cliente, ver el detalle y cambiar el estado. Al cancelar un pedido el stock vuelve al inventario.
 - **Categorías:** crear, renombrar y eliminar.
 - **Clientes:** ver cuánto ha comprado cada uno y bloquear o reactivar su acceso.
@@ -89,7 +90,7 @@ public/
   login.html, registro.html, cuenta.html
   admin.html           Panel de administración
   css/                 styles.css (tienda) y admin.css (panel)
-  js/                  core.js (compartido) y un archivo por página
+  js/                  core.js (compartido), polo.js (dibujo de los polos) y un archivo por página
 test/api.test.js       Pruebas de la API
 ```
 

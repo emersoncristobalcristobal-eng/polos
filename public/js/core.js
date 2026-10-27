@@ -1,4 +1,8 @@
-// Utilidades compartidas por todas las páginas: API, sesión, carrito, cabecera y el polo en SVG.
+// Utilidades compartidas por todas las páginas: API, sesión, carrito, cabecera y tarjetas de producto.
+
+import { PRINTS, isLight, luminance, poloSVG } from './polo.js';
+
+export { PRINTS, isLight, luminance, poloSVG };
 
 export const STORE = {
   name: 'POLOLAB',
@@ -160,103 +164,16 @@ export function statusChip(status) {
   return `<span class="chip chip-${s.tone}">${esc(s.label)}</span>`;
 }
 
-// ---------- El polo dibujado en SVG ----------
-function luminance(hex) {
-  const n = parseInt(String(hex).slice(1), 16);
-  if (Number.isNaN(n)) return 0;
-  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
-    const c = v / 255;
-    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-  });
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-}
-export const isLight = (hex) => luminance(hex) > 0.45;
-
-const HEX = /^#[0-9a-f]{6}$/i;
-const BODY =
-  'M112 26C96 32 76 36 58 44C40 52 30 66 24 82L12 110L50 134L76 106C79 160 78 240 78 300Q150 308 222 300C222 240 221 160 224 106L250 134L288 110L276 82C270 66 260 52 242 44C224 36 204 32 188 26Q150 62 112 26Z';
-let svgSeq = 0;
-
-export function poloSVG({ color = '#1a1a1c', accent = '#ff2a2a', design = 'liso', text = '', className = '', label = '' } = {}) {
-  const c = HEX.test(color) ? color : '#1a1a1c';
-  const a = HEX.test(accent) ? accent : '#ff2a2a';
-  const id = `polo${++svgSeq}`;
-  const light = isLight(c);
-  const stitch = light ? 'rgba(0,0,0,.2)' : 'rgba(255,255,255,.16)';
-  const contrast = light ? '#151515' : '#f4f4f4';
-
-  let deco = '';
-  if (design === 'franja') {
-    deco = `<rect x="136" y="20" width="28" height="300" fill="${a}"/>
-      <rect x="147" y="20" width="6" height="300" fill="${contrast}" opacity=".85"/>`;
-  } else if (design === 'lineas') {
-    deco = `<g id="${id}-l" fill="none" stroke="${a}" stroke-width="4.5" stroke-linecap="round">
-        <path d="M112 35C96 41 78 45 62 53C46 61 36 73 31 89L20 114"/>
-        <path d="M114 43C98 49 81 53 66 61C52 69 43 80 38 95L28 119"/>
-        <path d="M12 110L50 134L55 127L16 102Z" fill="${a}" stroke="none"/>
-      </g>
-      <use href="#${id}-l" transform="translate(300 0) scale(-1 1)"/>`;
-  }
-
-  const rib = design === 'lineas' ? a : light ? 'rgba(0,0,0,.18)' : 'rgba(255,255,255,.12)';
-  const emblem = design === 'franja'
-    ? `<path d="M184 96l9-14 5 7 3-4 7 11z" fill="${contrast}" opacity=".9"/>`
-    : `<path d="M184 96l9-14 5 7 3-4 7 11z" fill="${a}"/>`;
-  const t = String(text || '').toUpperCase().slice(0, 12);
-  const words = t
-    ? `<text x="150" y="182" text-anchor="middle" font-family="'Barlow Condensed', Impact, sans-serif" font-weight="800"
-         font-size="40" letter-spacing="2" fill="${design === 'franja' ? contrast : a}" stroke="${c}" stroke-width="5"
-         paint-order="stroke" ${t.length > 7 ? 'textLength="128" lengthAdjust="spacingAndGlyphs"' : ''}>${esc(t)}</text>`
-    : '';
-
-  return `<svg class="polo ${esc(className)}" viewBox="0 0 300 326" role="img" aria-label="${esc(label || 'Polo')}" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <clipPath id="${id}-c"><path d="${BODY}"/></clipPath>
-      <linearGradient id="${id}-h" x1="0" x2="1">
-        <stop offset="0" stop-color="#000" stop-opacity=".5"/>
-        <stop offset=".2" stop-color="#000" stop-opacity=".1"/>
-        <stop offset=".44" stop-color="#fff" stop-opacity=".12"/>
-        <stop offset=".6" stop-color="#fff" stop-opacity="0"/>
-        <stop offset=".84" stop-color="#000" stop-opacity=".16"/>
-        <stop offset="1" stop-color="#000" stop-opacity=".55"/>
-      </linearGradient>
-      <linearGradient id="${id}-v" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#fff" stop-opacity=".1"/>
-        <stop offset=".45" stop-color="#fff" stop-opacity="0"/>
-        <stop offset="1" stop-color="#000" stop-opacity=".38"/>
-      </linearGradient>
-      <radialGradient id="${id}-s"><stop offset="0" stop-color="#000" stop-opacity=".7"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>
-    </defs>
-    <ellipse cx="150" cy="312" rx="96" ry="10" fill="url(#${id}-s)"/>
-    <path d="M112 26Q150 62 188 26Q150 15 112 26Z" fill="${c}"/>
-    <path d="M112 26Q150 62 188 26Q150 15 112 26Z" fill="#000" opacity=".5"/>
-    <path d="${BODY}" fill="${c}"/>
-    <g clip-path="url(#${id}-c)">
-      ${deco}
-      <g fill="none" stroke="#000" stroke-opacity=".16" stroke-width="3" stroke-linecap="round">
-        <path d="M100 150Q112 210 104 290"/><path d="M198 140Q188 200 196 290"/>
-        <path d="M78 116Q92 128 104 126"/><path d="M222 116Q208 128 196 126"/>
-      </g>
-      <path d="M128 120Q136 200 130 290" fill="none" stroke="#fff" stroke-opacity=".06" stroke-width="7" stroke-linecap="round"/>
-      <path d="M58 44C66 70 72 90 76 106M242 44C234 70 228 90 224 106" fill="none" stroke="#000" stroke-opacity=".25" stroke-width="1.3"/>
-      <path d="M81 293Q150 301 219 293M16 103L54 127M284 103L246 127" fill="none" stroke="${stitch}" stroke-width="1.2" stroke-dasharray="3 3"/>
-      ${emblem}
-      ${words}
-      <rect x="0" y="0" width="300" height="326" fill="url(#${id}-h)"/>
-      <rect x="0" y="0" width="300" height="326" fill="url(#${id}-v)"/>
-    </g>
-    <path d="M112 26Q150 62 188 26" fill="none" stroke="${c}" stroke-width="6"/>
-    <path d="M112 26Q150 62 188 26" fill="none" stroke="${rib}" stroke-width="6"/>
-    <path class="polo-rim" d="${BODY}" fill="none" stroke="${a}" stroke-width="2"/>
-  </svg>`;
-}
-
-export function productVisual(p, { text = '', className = '' } = {}) {
+export function productVisual(p, { text = '', view = 'front', className = '', flat = false } = {}) {
   const name = p.product_name || p.name || 'Polo';
   if (p.image) return `<img class="polo polo-img ${esc(className)}" src="${esc(p.image)}" alt="${esc(name)}" loading="lazy">`;
-  return poloSVG({ color: p.color, accent: p.accent, design: p.design, text, className, label: name });
+  return poloSVG({
+    color: p.color, accent: p.accent, design: p.design, print: p.print, text, view, className, flat,
+    label: `${name}${view === 'back' ? ', espalda' : ''}`,
+  });
 }
 
+// Tarjeta del catálogo: al pasar el mouse se muestra la espalda del polo.
 export function productCard(p) {
   const soldOut = p.total_stock === 0;
   return `<a class="card" href="/producto.html?id=${p.id}" style="--accent:${esc(p.accent)}">
@@ -265,7 +182,10 @@ export function productCard(p) {
         ${p.featured ? `<span class="tag">${esc(STORE.collection)}</span>` : ''}
         ${soldOut ? '<span class="tag tag-muted">Agotado</span>' : ''}
       </div>
-      ${productVisual(p, { className: 'card-polo' })}
+      <div class="card-views ${p.image ? '' : 'has-back'}">
+        ${productVisual(p, { className: 'card-polo card-front' })}
+        ${p.image ? '' : productVisual(p, { view: 'back', className: 'card-polo card-back' })}
+      </div>
     </div>
     <div class="card-info">
       <span class="card-cat">${esc(p.category || 'Polo')}</span>

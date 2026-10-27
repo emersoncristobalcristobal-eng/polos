@@ -71,7 +71,7 @@ module.exports = ({ db, uploadsDir }) => {
       products: db.prepare('SELECT COUNT(*) AS n FROM products WHERE active = 1').get().n,
       salesByDay,
       topProducts: db.prepare(`
-        SELECT oi.product_id, oi.product_name AS name, oi.color, oi.accent, oi.design, oi.image,
+        SELECT oi.product_id, oi.product_name AS name, oi.color, oi.accent, oi.design, oi.print, oi.image,
                SUM(oi.quantity) AS units, SUM(oi.quantity * oi.unit_price) AS revenue
         FROM order_items oi JOIN orders o ON o.id = oi.order_id
         WHERE o.status != 'cancelado'
@@ -105,6 +105,7 @@ module.exports = ({ db, uploadsDir }) => {
       color: util.color(body.color, 'color del polo'),
       accent: util.color(body.accent, 'color de acento'),
       design: util.oneOf(body.design, util.DESIGNS, 'diseño'),
+      print: util.oneOf(body.print || 'ninguno', util.PRINTS, 'estampado'),
       featured: util.bool(body.featured) ? 1 : 0,
       active: util.bool(body.active) ? 1 : 0,
       stock: Object.fromEntries(
@@ -135,9 +136,9 @@ module.exports = ({ db, uploadsDir }) => {
     const image = req.file ? `/uploads/${req.file.filename}` : null;
     const id = util.tx(db, () => {
       const { lastInsertRowid } = db.prepare(`
-        INSERT INTO products (name, description, price, category_id, color, accent, design, image, featured, active)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run(p.name, p.description, p.price, p.category_id, p.color, p.accent, p.design, image, p.featured, p.active);
+        INSERT INTO products (name, description, price, category_id, color, accent, design, print, image, featured, active)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(p.name, p.description, p.price, p.category_id, p.color, p.accent, p.design, p.print, image, p.featured, p.active);
       saveStock(lastInsertRowid, p.stock);
       return lastInsertRowid;
     });
@@ -156,9 +157,9 @@ module.exports = ({ db, uploadsDir }) => {
     util.tx(db, () => {
       db.prepare(`
         UPDATE products SET name = ?, description = ?, price = ?, category_id = ?, color = ?, accent = ?,
-                            design = ?, image = ?, featured = ?, active = ?
+                            design = ?, print = ?, image = ?, featured = ?, active = ?
         WHERE id = ?`)
-        .run(p.name, p.description, p.price, p.category_id, p.color, p.accent, p.design, image, p.featured, p.active, id);
+        .run(p.name, p.description, p.price, p.category_id, p.color, p.accent, p.design, p.print, image, p.featured, p.active, id);
       saveStock(id, p.stock);
     });
     if (image !== current.image) removeImage(current.image);

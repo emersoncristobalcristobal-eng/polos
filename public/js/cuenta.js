@@ -40,7 +40,7 @@ function orderHTML(o) {
       <div class="order-items">
         ${o.items.map((it) => `
           <div class="order-item">
-            <div class="cart-thumb">${productVisual(it, { text: it.custom_text })}</div>
+            <div class="cart-thumb">${productVisual(it, { text: it.custom_text, view: it.custom_text ? 'back' : 'front' })}</div>
             <div><strong>${esc(it.product_name)}</strong><span>Talla ${esc(it.size)} · ${it.quantity} u.${it.custom_text ? ` · “${esc(it.custom_text)}”` : ''}</span></div>
             <span>${money(it.unit_price * it.quantity)}</span>
           </div>`).join('')}

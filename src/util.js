@@ -2,6 +2,7 @@
 
 const SIZES = ['S', 'M', 'L', 'XL'];
 const DESIGNS = ['liso', 'franja', 'lineas'];
+const PRINTS = ['ninguno', 'logo', 'lima26', 'atardecer', 'ola'];
 const ORDER_STATUSES = ['pendiente', 'pagado', 'enviado', 'entregado', 'cancelado'];
 const PAYMENT_METHODS = ['yape', 'transferencia', 'contraentrega'];
 
@@ -96,6 +97,7 @@ function restock(db, items) {
 module.exports = {
   SIZES,
   DESIGNS,
+  PRINTS,
   ORDER_STATUSES,
   PAYMENT_METHODS,
   CUSTOM_FEE,

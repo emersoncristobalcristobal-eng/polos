@@ -129,19 +129,27 @@ test('el administrador gestiona productos, categorías y pedidos', async () => {
   const form = new FormData();
   Object.entries({
     name: 'Polo Test', description: 'Prueba', price: '49.90', category_id: String(cat.data.id),
-    color: '#112233', accent: '#FF0000', design: 'franja', active: '1', stock_S: '1', stock_M: '2', stock_L: '0', stock_XL: '0',
+    color: '#112233', accent: '#FF0000', design: 'franja', print: 'ola', active: '1', stock_S: '1', stock_M: '2', stock_L: '0', stock_XL: '0',
   }).forEach(([k, v]) => form.append(k, v));
   form.append('image', new Blob([Buffer.from([0x89, 0x50, 0x4e, 0x47])], { type: 'image/png' }), 'polo.png');
   const created = await admin('POST', '/api/admin/products', form);
   assert.equal(created.status, 201);
   assert.equal(created.data.price, 4990);
   assert.equal(created.data.accent, '#ff0000');
+  assert.equal(created.data.print, 'ola');
   assert.match(created.data.image, /^\/uploads\/[a-f0-9]+\.png$/);
   assert.equal((await admin('GET', created.data.image)).status, 200);
 
   const bad = new FormData();
   bad.append('name', 'X');
   assert.equal((await admin('POST', '/api/admin/products', bad)).status, 400);
+
+  const badPrint = new FormData();
+  Object.entries({ name: 'Polo raro', price: '10', color: '#000000', accent: '#ffffff', design: 'liso', print: 'calavera' })
+    .forEach(([k, v]) => badPrint.append(k, v));
+  const rejected = await admin('POST', '/api/admin/products', badPrint);
+  assert.equal(rejected.status, 400);
+  assert.match(rejected.data.error, /estampado/);
 
   // Un cliente compra el producto nuevo y el admin lo despacha.
   const buyer = client();
@@ -191,4 +199,21 @@ test('rechaza peticiones que vienen de otro sitio', async () => {
     body: JSON.stringify({ email: 'admin@pololab.pe', password: 'admin123' }),
   });
   assert.equal(res.status, 403);
+});
+
+test('una base de datos anterior a los estampados se actualiza sin perder datos', () => {
+  const { openDb } = require('../src/db');
+  const file = path.join(dataDir, 'antigua.db');
+  const old = openDb(file);
+  old.exec('ALTER TABLE order_items DROP COLUMN print; ALTER TABLE products DROP COLUMN print;');
+  const products = old.prepare('SELECT COUNT(*) AS n FROM products').get().n;
+  old.close();
+
+  const db = openDb(file);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM products').get().n, products);
+  assert.equal(db.prepare("SELECT print FROM products WHERE name = 'Polo Lima 26 Negro'").get().print, 'lima26');
+  assert.equal(db.prepare("SELECT print FROM products WHERE name = 'Polo Básico Negro'").get().print, 'ninguno');
+  const item = db.prepare("SELECT print FROM order_items WHERE product_name = 'Polo Lima 26 Negro' LIMIT 1").get();
+  assert.equal(item.print, 'lima26');
+  db.close();
 });

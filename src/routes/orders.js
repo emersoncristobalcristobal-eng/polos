@@ -25,7 +25,7 @@ module.exports = ({ db }) => {
     util.oneOf(paymentMethod, util.PAYMENT_METHODS, 'método de pago');
     const orderNotes = util.text(notes, { field: 'notas', max: 300, required: false });
 
-    const findProduct = db.prepare('SELECT id, name, price, color, accent, design, image, active FROM products WHERE id = ?');
+    const findProduct = db.prepare('SELECT id, name, price, color, accent, design, print, image, active FROM products WHERE id = ?');
     const takeStock = db.prepare(
       'UPDATE product_stock SET stock = stock - ? WHERE product_id = ? AND size = ? AND stock >= ?',
     );
@@ -54,10 +54,10 @@ module.exports = ({ db }) => {
         .run(req.user.id, subtotal, shippingCost, subtotal + shippingCost, ship.name, ship.phone, ship.address, ship.city, paymentMethod, orderNotes);
 
       const insertItem = db.prepare(`
-        INSERT INTO order_items (order_id, product_id, product_name, size, quantity, unit_price, custom_text, color, accent, design, image)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        INSERT INTO order_items (order_id, product_id, product_name, size, quantity, unit_price, custom_text, color, accent, design, print, image)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
       for (const l of lines) {
-        insertItem.run(id, l.p.id, l.p.name, l.size, l.quantity, l.unit, l.custom, l.p.color, l.p.accent, l.p.design, l.p.image);
+        insertItem.run(id, l.p.id, l.p.name, l.size, l.quantity, l.unit, l.custom, l.p.color, l.p.accent, l.p.design, l.p.print, l.p.image);
       }
       return id;
     });

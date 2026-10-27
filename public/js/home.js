@@ -12,7 +12,7 @@ const ordered = trio.length === 3 ? [trio[1], trio[0], trio[2]] : trio;
 const stageItem = (p, center) => `
   <a class="stage-item ${center ? 'is-center' : 'is-side'}" href="/producto.html?id=${p.id}" aria-label="${esc(p.name)}">
     <div class="${center ? 'float' : ''}">${productVisual(p)}</div>
-    <div class="stage-reflection" aria-hidden="true">${productVisual(p)}</div>
+    <div class="stage-reflection" aria-hidden="true">${productVisual(p, { flat: true })}</div>
   </a>`;
 
 qs('[data-stage]').innerHTML = ordered.map((p, i) => stageItem(p, ordered.length === 1 || i === 1)).join('');
@@ -43,7 +43,7 @@ const visuals = { material, origen, edicion, crear };
 for (const [key, product] of Object.entries(visuals)) {
   const el = qs(`[data-visual="${key}"]`);
   if (!product) continue;
-  el.innerHTML = key === 'crear' ? productVisual(product, { text: 'TU NOMBRE' }) : productVisual(product);
+  el.innerHTML = key === 'crear' ? productVisual(product, { text: 'TU NOMBRE', view: 'back' }) : productVisual(product);
 }
 
 // ---------- Personalización en vivo ----------
@@ -52,7 +52,7 @@ const customLink = qs('[data-custom-link]');
 const updateCustom = () => {
   if (!crear) return;
   const name = nameInput.value.trim().toUpperCase();
-  qs('[data-visual="crear"]').innerHTML = productVisual(crear, { text: name || 'TU NOMBRE' });
+  qs('[data-visual="crear"]').innerHTML = productVisual(crear, { text: name || 'TU NOMBRE', view: 'back' });
   customLink.href = `/producto.html?id=${crear.id}${name ? `&nombre=${encodeURIComponent(name)}` : ''}`;
 };
 nameInput.addEventListener('input', updateCustom);

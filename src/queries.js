@@ -4,7 +4,7 @@ const { SIZES } = require('./util');
 
 const PRODUCT_SELECT = `
   SELECT p.id, p.name, p.description, p.price, p.category_id, c.name AS category,
-         p.color, p.accent, p.design, p.image, p.featured, p.active, p.created_at
+         p.color, p.accent, p.design, p.print, p.image, p.featured, p.active, p.created_at
   FROM products p
   LEFT JOIN categories c ON c.id = p.category_id`;
 

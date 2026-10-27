@@ -770,6 +770,14 @@ td small {
   width: 56px;
 }
 
+.print-options {
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+}
+
+.preview .seg {
+  justify-content: center;
+}
+
 .design-option:has(input:checked) {
   border-color: var(--red);
   background: rgba(255, 42, 42, 0.07);

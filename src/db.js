@@ -113,12 +113,36 @@ const DEMO_PRODUCTS = [
     'Amarillo volt de alta visibilidad. Ligero, elástico y con protección UV.'],
 ];
 
+// Estampado de cada polo de ejemplo (los que no aparecen van lisos).
+const DEMO_PRINTS = {
+  'Polo Lima 26 Negro': 'lima26',
+  'Polo Lima 26 Blanco': 'logo',
+  'Polo Oversize Asfalto': 'atardecer',
+  'Polo Oversize Hueso': 'ola',
+  'Polo Street Petróleo': 'logo',
+};
+
+// Cambios de estructura para bases de datos creadas con versiones anteriores de la tienda.
+function migrate(db) {
+  const hasColumn = (table, column) => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+  if (!hasColumn('products', 'print')) {
+    db.exec("ALTER TABLE products ADD COLUMN print TEXT NOT NULL DEFAULT 'ninguno'");
+    const setPrint = db.prepare('UPDATE products SET print = ? WHERE name = ?');
+    for (const [name, print] of Object.entries(DEMO_PRINTS)) setPrint.run(print, name);
+  }
+  if (!hasColumn('order_items', 'print')) {
+    db.exec("ALTER TABLE order_items ADD COLUMN print TEXT NOT NULL DEFAULT 'ninguno'");
+    db.exec('UPDATE order_items SET print = (SELECT print FROM products WHERE id = order_items.product_id) WHERE product_id IS NOT NULL');
+  }
+}
+
 function openDb(file) {
   if (file !== ':memory:') fs.mkdirSync(path.dirname(file), { recursive: true });
   const db = new DatabaseSync(file);
   db.exec('PRAGMA foreign_keys = ON;');
   if (file !== ':memory:') db.exec('PRAGMA journal_mode = WAL;');
   db.exec(SCHEMA);
+  migrate(db);
   seed(db);
   return db;
 }
@@ -139,14 +163,15 @@ function seed(db) {
   const categoryIds = Object.fromEntries(DEMO_CATEGORIES.map((c) => [c, insertCategory.run(c).lastInsertRowid]));
 
   const insertProduct = db.prepare(`
-    INSERT INTO products (name, description, price, category_id, color, accent, design, featured)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+    INSERT INTO products (name, description, price, category_id, color, accent, design, print, featured)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   const insertStock = db.prepare('INSERT INTO product_stock (product_id, size, stock) VALUES (?, ?, ?)');
   const products = [];
   for (const [name, cat, price, color, accent, design, featured, stock, description] of DEMO_PRODUCTS) {
-    const id = insertProduct.run(name, description, Math.round(price * 100), categoryIds[cat], color, accent, design, featured).lastInsertRowid;
+    const print = DEMO_PRINTS[name] || 'ninguno';
+    const id = insertProduct.run(name, description, Math.round(price * 100), categoryIds[cat], color, accent, design, print, featured).lastInsertRowid;
     SIZES.forEach((size, i) => insertStock.run(id, size, stock[i]));
-    products.push({ id, name, price: Math.round(price * 100), color, accent, design });
+    products.push({ id, name, price: Math.round(price * 100), color, accent, design, print });
   }
 
   // Algunos pedidos de ejemplo para que el panel de administración no empiece vacío.
@@ -165,8 +190,8 @@ function seed(db) {
     VALUES (?, ?, ?, ?, ?, 'Cliente Demo', '987654321', 'Av. Arequipa 1234, Dpto. 502', 'Lima', ?,
             datetime('now', ?), datetime('now', ?))`);
   const insertItem = db.prepare(`
-    INSERT INTO order_items (order_id, product_id, product_name, size, quantity, unit_price, custom_text, color, accent, design)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    INSERT INTO order_items (order_id, product_id, product_name, size, quantity, unit_price, custom_text, color, accent, design, print)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   const payments = ['yape', 'transferencia', 'contraentrega'];
   demoOrders.forEach((o, i) => {
     const lines = o.lines.map(([idx, size, qty, custom]) => ({
@@ -177,7 +202,7 @@ function seed(db) {
     const when = `-${o.daysAgo * 24 + 3 + i} hours`;
     const orderId = insertOrder.run(demoUser.lastInsertRowid, o.status, subtotal, shipping, subtotal + shipping, payments[i % 3], when, when).lastInsertRowid;
     for (const l of lines) {
-      insertItem.run(orderId, l.p.id, l.p.name, l.size, l.qty, l.unit, l.custom, l.p.color, l.p.accent, l.p.design);
+      insertItem.run(orderId, l.p.id, l.p.name, l.size, l.qty, l.unit, l.custom, l.p.color, l.p.accent, l.p.design, l.p.print);
     }
   });
 }

@@ -1,5 +1,5 @@
 import {
-  DESIGNS, PAYMENT, STATUS, STATUS_FLOW, STORE, api, esc, fmtDate, getConfig, getMe, icons, logoMark, logout, money,
+  DESIGNS, PAYMENT, PRINTS, STATUS, STATUS_FLOW, STORE, api, esc, fmtDate, getConfig, getMe, icons, logoMark, logout, money,
   poloSVG, productVisual, qs, qsa, statusChip, toast,
 } from './core.js';
 
@@ -249,7 +249,7 @@ async function renderDashboard(alive) {
           <div class="rank">
             ${s.topProducts.length ? s.topProducts.map((p) => `
               <div class="rank-row">
-                <div class="thumb">${productVisual(p)}</div>
+                <div class="thumb">${productVisual(p, { flat: true })}</div>
                 <div><strong>${esc(p.name)}</strong><div class="rank-meter"><i style="width: ${(p.units / maxUnits) * 100}%"></i></div></div>
                 <div class="rank-value"><b>${p.units} u.</b>${money(p.revenue)}</div>
               </div>`).join('') : '<p class="muted">Aún no hay ventas.</p>'}
@@ -334,8 +334,8 @@ async function renderProducts(alive, arg) {
     qs('[data-count]', view).textContent = `${list.length} de ${catalog.products.length} productos`;
     rows.innerHTML = list.length
       ? list.map((p) => `<tr>
-          <td><div class="cell-main"><div class="thumb">${productVisual(p)}</div>
-            <div><strong>${esc(p.name)}</strong><small>${esc(p.category || 'Sin categoría')} · ${esc(DESIGNS[p.design] || p.design)}</small></div></div></td>
+          <td><div class="cell-main"><div class="thumb">${productVisual(p, { flat: true })}</div>
+            <div><strong>${esc(p.name)}</strong><small>${esc(p.category || 'Sin categoría')} · ${esc(DESIGNS[p.design] || p.design)}${p.print && p.print !== 'ninguno' ? ` · ${esc(PRINTS[p.print] || p.print)}` : ''}</small></div></div></td>
           <td class="num">${money(p.price)}</td>
           <td>${stockPills(p.stock)}</td>
           <td>${p.active ? '<span class="chip chip-ok">A la venta</span>' : '<span class="chip chip-muted">Oculto</span>'}
@@ -379,7 +379,7 @@ function openProductForm(product = null) {
   const isNew = !product;
   const p = product || {
     name: '', description: '', price: 5990, category_id: catalog.categories[0]?.id ?? '', color: '#18181a',
-    accent: '#ff2a2a', design: 'liso', featured: false, active: true, image: null,
+    accent: '#ff2a2a', design: 'liso', print: 'ninguno', featured: false, active: true, image: null,
     stock: Object.fromEntries(config.sizes.map((s) => [s, 10])),
   };
 
@@ -387,6 +387,10 @@ function openProductForm(product = null) {
     <form class="product-form" novalidate data-form>
       <div class="preview">
         <div class="preview-stage" data-preview></div>
+        <div class="seg" role="group" aria-label="Vista de la vista previa" data-preview-views>
+          <button type="button" data-pv="front" aria-pressed="true">Frente</button>
+          <button type="button" data-pv="back" aria-pressed="false">Espalda</button>
+        </div>
         <small data-preview-note></small>
       </div>
       <div class="form-grid">
@@ -416,6 +420,17 @@ function openProductForm(product = null) {
               <label class="design-option">
                 <input type="radio" name="design" value="${value}" ${value === p.design ? 'checked' : ''}>
                 <span data-design-thumb="${value}"></span>${label}
+              </label>`).join('')}
+          </div>
+        </fieldset>
+
+        <fieldset class="field full" style="border: 0; padding: 0; margin: 0">
+          <legend class="field-label" style="margin-bottom: 6px">Estampado en el pecho</legend>
+          <div class="design-options print-options">
+            ${Object.entries(PRINTS).map(([value, label]) => `
+              <label class="design-option">
+                <input type="radio" name="print" value="${value}" ${value === (p.print || 'ninguno') ? 'checked' : ''}>
+                <span data-print-thumb="${value}"></span>${label}
               </label>`).join('')}
           </div>
         </fieldset>
@@ -451,19 +466,29 @@ function openProductForm(product = null) {
   const removeImage = qs('[data-remove-image]', body);
   let objectUrl = null;
   let thumbsKey = '';
+  let printsKey = '';
+  let previewView = 'front';
   const validHex = (v) => /^#[0-9a-f]{6}$/i.test(v);
 
   const drawPreview = () => {
     const color = validHex(form.elements.color.value) ? form.elements.color.value : p.color;
     const accent = validHex(form.elements.accent.value) ? form.elements.accent.value : p.accent;
     const design = form.elements.design.value;
-    // Redibujar las miniaturas solo si cambian los colores: si se reemplazan bajo el puntero, el clic se pierde.
+    const print = form.elements.print.value;
+    // Redibujar las miniaturas solo si cambia lo que muestran: si se reemplazan bajo el puntero, el clic se pierde.
     if (thumbsKey !== color + accent) {
       thumbsKey = color + accent;
       qsa('[data-design-thumb]', body).forEach((el) => {
-        el.innerHTML = poloSVG({ color, accent, design: el.dataset.designThumb });
+        el.innerHTML = poloSVG({ color, accent, design: el.dataset.designThumb, flat: true });
       });
     }
+    if (printsKey !== color + accent + design) {
+      printsKey = color + accent + design;
+      qsa('[data-print-thumb]', body).forEach((el) => {
+        el.innerHTML = poloSVG({ color, accent, design, print: el.dataset.printThumb, flat: true });
+      });
+    }
+    qsa('[data-pv]', body).forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.pv === previewView)));
 
     if (objectUrl) URL.revokeObjectURL(objectUrl);
     objectUrl = null;
@@ -476,8 +501,8 @@ function openProductForm(product = null) {
       preview.innerHTML = `<img class="polo polo-img" src="${esc(p.image)}" alt="Foto actual">`;
       note.textContent = 'Foto actual del producto';
     } else {
-      preview.innerHTML = poloSVG({ color, accent, design });
-      note.textContent = 'Vista previa del polo dibujado';
+      preview.innerHTML = poloSVG({ color, accent, design, print, view: previewView, text: previewView === 'back' ? 'NOMBRE' : '' });
+      note.textContent = previewView === 'back' ? 'Espalda: aquí va el nombre si el cliente lo personaliza' : 'Vista previa del polo dibujado';
     }
   };
 
@@ -495,6 +520,12 @@ function openProductForm(product = null) {
     }),
   );
   form.addEventListener('change', drawPreview);
+  qsa('[data-pv]', body).forEach((b) =>
+    b.addEventListener('click', () => {
+      previewView = b.dataset.pv;
+      drawPreview();
+    }),
+  );
   qs('[data-cancel]', body).addEventListener('click', () => modal.close());
   modal.addEventListener('close', () => objectUrl && URL.revokeObjectURL(objectUrl), { once: true });
 
@@ -630,7 +661,7 @@ async function openOrder(id, onChange) {
         <div class="order-items">
           ${order.items.map((it) => `
             <div class="order-item">
-              <div class="cart-thumb">${productVisual(it, { text: it.custom_text })}</div>
+              <div class="cart-thumb">${productVisual(it, { text: it.custom_text, view: it.custom_text ? 'back' : 'front' })}</div>
               <div><strong>${esc(it.product_name)}</strong>
                 <span>Talla ${esc(it.size)} · ${it.quantity} × ${money(it.unit_price)}${it.custom_text ? ` · Estampado: “${esc(it.custom_text)}”` : ''}</span></div>
               <span>${money(it.unit_price * it.quantity)}</span>
