@@ -13,7 +13,18 @@ Tienda online de polos con estética cinematográfica: escenario oscuro, luces d
 
 ## Cómo ejecutarlo
 
-Requisitos: **Node.js 22.13 o superior** (usa la base de datos SQLite incluida en Node, no hay que instalar MySQL).
+La tienda funciona mientras el servidor esté encendido **en tu computadora**. Si abres `localhost:3000` sin haberlo iniciado, el navegador muestra "localhost rechazó la conexión".
+
+Requisito: **Node.js 22.13 o superior** (versión LTS de <https://nodejs.org>). No hace falta instalar MySQL: usa la base de datos SQLite incluida en Node.
+
+### En Windows (lo más fácil)
+
+1. Instala Node.js desde <https://nodejs.org> (botón LTS, opciones por defecto).
+2. Descarga el proyecto: en GitHub elige la rama `claude/busy-davinci-8v96dg`, botón **Code → Download ZIP**, y descomprímelo.
+3. Haz doble clic en **`iniciar.bat`**. La primera vez instala las dependencias y luego abre la tienda en el navegador.
+4. **No cierres la ventana negra** mientras uses la tienda; si la cierras, la página deja de funcionar.
+
+### Desde la terminal (Windows, Mac o Linux)
 
 ```bash
 npm install
