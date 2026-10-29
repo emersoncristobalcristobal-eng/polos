@@ -394,11 +394,64 @@ async function printTestTicket(printerName, { width = '58mm', autoCut = true, st
   return await sendToWindowsPrinter(printerName, buffer, 'Ticket de Prueba');
 }
 
+// Envía el comprobante a la Central de Impresión en la nube (Cloud Print)
+async function sendToCentralPrinter({
+  jobsUrl,
+  siteAccessToken,
+  submitToken,
+  source = 'POLOLAB',
+  externalId,
+  title,
+  content,
+  copies = 1,
+}) {
+  if (!jobsUrl || !siteAccessToken || !submitToken) {
+    throw new Error('Faltan configurar la URL o los tokens de la Central de Impresión');
+  }
+
+  const res = await fetch(jobsUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'OAI-Sites-Authorization': `Bearer ${siteAccessToken}`,
+      'Authorization': `Bearer ${submitToken}`,
+    },
+    body: JSON.stringify({
+      source,
+      external_id: String(externalId),
+      title: title || `Boleta ${externalId}`,
+      content,
+      copies: Math.min(Math.max(Number(copies) || 1, 1), 3),
+    }),
+  });
+
+  const rawText = await res.text();
+  let data;
+  try {
+    data = JSON.parse(rawText);
+  } catch {
+    data = { message: rawText };
+  }
+
+  if (!res.ok) {
+    throw new Error(`Error en Central de Impresión (${res.status}): ${data.error || data.message || rawText}`);
+  }
+
+  return {
+    ok: true,
+    jobId: data.job?.id,
+    status: data.job?.status || 'queued',
+    duplicate: Boolean(data.duplicate),
+    createdAt: data.job?.created_at,
+  };
+}
+
 module.exports = {
   listPrinters,
   generateReceiptText,
   buildEscPosBuffer,
   sendToWindowsPrinter,
+  sendToCentralPrinter,
   printTestTicket,
   formatMoney,
 };

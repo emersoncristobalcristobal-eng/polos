@@ -1155,28 +1155,80 @@ async function renderPrinterConfig(container, alive) {
 
   container.innerHTML = `
     <form class="printer-grid" data-printer-form novalidate>
-      <section class="printer-card">
-        <div class="panel-head" style="margin: 0">
-          <h2>Impresora Térmica Física</h2>
+      <section class="printer-card" style="border-color: rgba(59, 130, 246, 0.4); background: linear-gradient(180deg, rgba(30, 58, 138, 0.08) 0%, var(--bg-1) 100%)">
+        <div class="panel-head" style="margin: 0; display: flex; align-items: center; justify-content: space-between">
+          <div style="display: flex; align-items: center; gap: 8px">
+            <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 8px #22c55e"></span>
+            <h2>Central de Impresión en la Nube</h2>
+          </div>
+          <span class="badge" style="background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.3); font-size: 11px">
+            Agente Windows Conectado
+          </span>
         </div>
         <p class="muted" style="font-size: 13px; margin: 0">
-          Conecta tu impresora térmica por USB, red o puerto serie. Se detectan las impresoras instaladas en Windows.
+          Envía comprobantes desde tu tienda en Render o desde cualquier celular directamente a la cola de impresión de tu PC con Windows (POS58 Printer).
         </p>
 
         <label class="field full">
-          <span>Impresora de Windows</span>
-          <select name="printer_name" required>
-            <option value="">-- Seleccionar impresora conectada --</option>
-            ${printers
-              .map(
-                (p) => `
-              <option value="${esc(p.name)}" ${p.name === settings.printer_name ? 'selected' : ''}>
-                ${esc(p.name)} ${p.isDefault ? '(Predeterminada del sistema)' : ''} [${esc(p.status)}]
-              </option>`,
-              )
-              .join('')}
+          <span>Método de Impresión Activo</span>
+          <select name="print_method" required>
+            <option value="central" ${settings.print_method !== 'windows_direct' ? 'selected' : ''}>
+              ☁️ Central de Impresión en la Nube (Recomendado para web y móviles)
+            </option>
+            <option value="windows_direct" ${settings.print_method === 'windows_direct' ? 'selected' : ''}>
+              💻 Impresora Windows local directa (Solo cuando el servidor corre en esta misma PC)
+            </option>
           </select>
-          <small class="muted">Si no aparece tu impresora térmica, asegúrate de tener instalado su controlador en Windows.</small>
+        </label>
+
+        <label class="field full">
+          <span>URL del Servicio Central (API Jobs)</span>
+          <input type="url" name="central_jobs_url" required value="${esc(settings.central_jobs_url || 'https://central-comprobantes-angel.angelopatrickriosnol.chatgpt.site/api/jobs')}">
+          <small class="muted">Endpoint HTTPS donde el agente de Windows recoge los tickets.</small>
+        </label>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px">
+          <label class="field">
+            <span>Site Access Token</span>
+            <input type="password" name="central_site_access_token" required value="${esc(settings.central_site_access_token || '')}" autocomplete="off">
+          </label>
+          <label class="field">
+            <span>Submit Token (Autorización)</span>
+            <input type="password" name="central_submit_token" required value="${esc(settings.central_submit_token || '')}" autocomplete="off">
+          </label>
+        </div>
+
+        <label class="field full">
+          <span>Nombre de Origen (Identificador del Sistema)</span>
+          <input type="text" name="central_source_name" maxlength="30" value="${esc(settings.central_source_name || 'POLOLAB')}">
+        </label>
+
+        <div style="margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center">
+          <button class="btn btn-sm" type="button" data-test-central-print style="background: #2563eb; color: #fff">
+            ⚡ Probar conexión con la Central
+          </button>
+          <a class="btn-ghost btn-sm" href="https://central-comprobantes-angel.angelopatrickriosnol.chatgpt.site" target="_blank" rel="noopener">
+            ↗ Abrir panel de la Central
+          </a>
+        </div>
+      </section>
+
+      <section class="printer-card">
+        <div class="panel-head" style="margin: 0">
+          <h2>Impresora Térmica Física (Hardware)</h2>
+        </div>
+        <p class="muted" style="font-size: 13px; margin: 0">
+          Configuración del dispositivo físico ESC/POS (USB001 / Spooler).
+        </p>
+
+        <label class="field full">
+          <span>Nombre de Impresora en Windows</span>
+          <input type="text" name="printer_name" list="printers-list" value="${esc(settings.printer_name || 'POS58 Printer')}" placeholder="Ej. POS58 Printer">
+          <datalist id="printers-list">
+            <option value="POS58 Printer">POS58 Printer (Recomendada)</option>
+            ${printers.map((p) => `<option value="${esc(p.name)}">${esc(p.name)} [${esc(p.status)}]</option>`).join('')}
+          </datalist>
+          <small class="muted">Debe coincidir con la impresora configurada en el Agente Windows.</small>
         </label>
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px">
@@ -1211,25 +1263,25 @@ async function renderPrinterConfig(container, alive) {
 
         <div style="margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap">
           <button class="btn-ghost btn-sm" type="button" data-test-print>
-            ${icons.printer} Imprimir ticket de prueba
+            ${icons.printer} Imprimir ticket de prueba local
           </button>
         </div>
       </section>
 
-      <section class="printer-card">
+      <section class="printer-card" style="grid-column: 1 / -1">
         <div class="panel-head" style="margin: 0">
           <h2>Datos Comerciales de la Boleta</h2>
         </div>
         <p class="muted" style="font-size: 13px; margin: 0">
-          Estos datos se imprimen en la cabecera y pie de cada boleta de venta.
+          Estos datos se imprimen en la cabecera y pie de cada boleta de venta física y digital.
         </p>
 
-        <label class="field full">
-          <span>Nombre de la Empresa o Marca</span>
-          <input type="text" name="store_business_name" required maxlength="100" value="${esc(settings.store_business_name)}">
-        </label>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px">
+          <label class="field">
+            <span>Nombre de la Empresa o Marca</span>
+            <input type="text" name="store_business_name" required maxlength="100" value="${esc(settings.store_business_name)}">
+          </label>
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px">
           <label class="field">
             <span>R.U.C. o Identificación Fiscal</span>
             <input type="text" name="store_ruc" maxlength="20" value="${esc(settings.store_ruc)}">
@@ -1239,6 +1291,11 @@ async function renderPrinterConfig(container, alive) {
             <span>Serie de Boleta</span>
             <input type="text" name="receipt_series" maxlength="10" value="${esc(settings.receipt_series || 'B001')}">
           </label>
+
+          <label class="field">
+            <span>Teléfono / WhatsApp de atención</span>
+            <input type="text" name="store_phone" maxlength="50" value="${esc(settings.store_phone)}">
+          </label>
         </div>
 
         <label class="field full">
@@ -1246,14 +1303,9 @@ async function renderPrinterConfig(container, alive) {
           <input type="text" name="store_address" maxlength="150" value="${esc(settings.store_address)}">
         </label>
 
-        <label class="field full">
-          <span>Teléfono / WhatsApp de atención</span>
-          <input type="text" name="store_phone" maxlength="50" value="${esc(settings.store_phone)}">
-        </label>
-
         <p class="form-error full" role="alert" data-cfg-error></p>
 
-        <div style="margin-top: auto; display: flex; justify-content: flex-end">
+        <div style="margin-top: 10px; display: flex; justify-content: flex-end">
           <button class="btn" type="submit">Guardar configuración</button>
         </div>
       </section>
@@ -1263,6 +1315,34 @@ async function renderPrinterConfig(container, alive) {
   const form = qs('[data-printer-form]', container);
   const errorP = qs('[data-cfg-error]', container);
   const testBtn = qs('[data-test-print]', container);
+  const testCentralBtn = qs('[data-test-central-print]', container);
+
+  testCentralBtn?.addEventListener('click', async () => {
+    testCentralBtn.disabled = true;
+    testCentralBtn.textContent = 'Enviando a Central…';
+    try {
+      const res = await api('/admin/printer/test-central', {
+        method: 'POST',
+        body: {
+          central_jobs_url: form.elements.central_jobs_url.value,
+          central_site_access_token: form.elements.central_site_access_token.value,
+          central_submit_token: form.elements.central_submit_token.value,
+          central_source_name: form.elements.central_source_name.value,
+        },
+      });
+
+      if (res.ok) {
+        toast(`¡Conexión exitosa! Comprobante de prueba en cola (Job: ${res.jobId || 'OK'})`);
+      } else {
+        toast(res.error || 'Error de conexión con la Central', 'error');
+      }
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      testCentralBtn.disabled = false;
+      testCentralBtn.innerHTML = '⚡ Probar conexión con la Central';
+    }
+  });
 
   testBtn.addEventListener('click', async () => {
     testBtn.disabled = true;
@@ -1294,7 +1374,7 @@ async function renderPrinterConfig(container, alive) {
       toast(err.message, 'error');
     } finally {
       testBtn.disabled = false;
-      testBtn.innerHTML = `${icons.printer} Imprimir ticket de prueba`;
+      testBtn.innerHTML = `${icons.printer} Imprimir ticket de prueba local`;
     }
   });
 
@@ -1309,6 +1389,11 @@ async function renderPrinterConfig(container, alive) {
       await api('/admin/printer', {
         method: 'PUT',
         body: {
+          print_method: form.elements.print_method.value,
+          central_jobs_url: form.elements.central_jobs_url.value,
+          central_site_access_token: form.elements.central_site_access_token.value,
+          central_submit_token: form.elements.central_submit_token.value,
+          central_source_name: form.elements.central_source_name.value,
           printer_name: form.elements.printer_name.value,
           printer_paper_width: form.elements.printer_paper_width.value,
           printer_auto_cut: form.elements.printer_auto_cut.checked ? '1' : '0',
@@ -1320,7 +1405,7 @@ async function renderPrinterConfig(container, alive) {
           receipt_series: form.elements.receipt_series.value,
         },
       });
-      toast('Configuración de impresora guardada');
+      toast('Configuración guardada correctamente');
       await renderPrinterConfig(container, alive);
     } catch (err) {
       errorP.textContent = err.message;

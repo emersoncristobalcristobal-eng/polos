@@ -1,17 +1,28 @@
 // Servicio de gestión de boletas de venta, numeración correlativa única y ciclo de impresión.
 
 const { getOrder } = require('./queries');
-const { buildEscPosBuffer, generateReceiptText, sendToWindowsPrinter, formatMoney } = require('./printer');
+const {
+  buildEscPosBuffer,
+  generateReceiptText,
+  sendToWindowsPrinter,
+  sendToCentralPrinter,
+  formatMoney,
+} = require('./printer');
 const util = require('./util');
 
 // Obtiene la configuración de la tienda y la impresora almacenada en la base de datos
 async function getSettings(db) {
   const rows = await db.all('SELECT key, value FROM settings');
   const defaults = {
-    printer_name: '',
+    printer_name: 'POS58 Printer',
     printer_paper_width: '58mm',
     printer_auto_cut: '1',
     printer_auto_print: 'on_paid', // 'on_paid', 'on_order', 'disabled'
+    print_method: 'central', // 'central' (para web y nube) o 'windows_direct' (PC local)
+    central_jobs_url: process.env.CENTRAL_JOBS_URL || 'https://central-comprobantes-angel.angelopatrickriosnol.chatgpt.site/api/jobs',
+    central_site_access_token: process.env.CENTRAL_SITE_ACCESS_TOKEN || 'hUvjKoa6cWySchg9atvV05OGpxeOmnlnsY3X-fXI-Ic',
+    central_submit_token: process.env.CENTRAL_SUBMIT_TOKEN || 'xOe6dWtyXbCubKF5oMeXmj_R9RxPOudAfLsGVWq58cw',
+    central_source_name: 'POLOLAB',
     store_business_name: 'POLOLAB PERÚ S.A.C.',
     store_ruc: '20608974512',
     store_address: 'Av. Larco 743, Miraflores, Lima',
@@ -113,8 +124,8 @@ async function generateReceipt(db, orderId, { autoPrint = true, forceImmediatePr
   return attachReceiptDetails(existing, order, settings);
 }
 
-// Envía la boleta a la impresora física y registra el resultado en la base de datos
-async function printReceipt(db, receiptId) {
+// Envía la boleta a la impresora física o a la Central de Impresión y registra el resultado en la base de datos
+async function printReceipt(db, receiptId, { method } = {}) {
   const receipt = await db.get('SELECT * FROM receipts WHERE id = ?', receiptId);
   if (!receipt) {
     throw new util.HttpError(404, 'Boleta no encontrada');
@@ -122,16 +133,10 @@ async function printReceipt(db, receiptId) {
 
   const order = await getOrder(db, receipt.order_id);
   const settings = await getSettings(db);
-  const printerName = settings.printer_name;
 
-  if (!printerName) {
-    await db.run(
-      `UPDATE receipts SET print_status = 'fallida', last_error = 'No hay ninguna impresora configurada en el sistema',
-       print_attempts = print_attempts + 1 WHERE id = ?`,
-      receiptId,
-    );
-    return { ok: false, error: 'No hay ninguna impresora configurada' };
-  }
+  const printMethod = method || settings.print_method || (process.platform === 'win32' ? 'windows_direct' : 'central');
+  const width = settings.printer_paper_width || '58mm';
+  const autoCut = settings.printer_auto_cut === '1';
 
   const storeInfo = {
     name: settings.store_business_name,
@@ -140,8 +145,71 @@ async function printReceipt(db, receiptId) {
     phone: settings.store_phone,
   };
 
-  const width = settings.printer_paper_width || '58mm';
-  const autoCut = settings.printer_auto_cut === '1';
+  // 1. Envío a la Central de Impresión en la nube (Cloud Print)
+  if (printMethod === 'central') {
+    const jobsUrl = settings.central_jobs_url;
+    const siteAccessToken = settings.central_site_access_token;
+    const submitToken = settings.central_submit_token;
+
+    if (!jobsUrl || !siteAccessToken || !submitToken) {
+      const err = 'Falta configurar la URL o los tokens de la Central de Impresión';
+      await db.run(
+        `UPDATE receipts SET print_status = 'fallida', last_error = ?,
+         print_attempts = print_attempts + 1 WHERE id = ?`,
+        err,
+        receiptId,
+      );
+      return { ok: false, error: err };
+    }
+
+    try {
+      const text = generateReceiptText(receipt, order, { width, storeInfo });
+      const job = await sendToCentralPrinter({
+        jobsUrl,
+        siteAccessToken,
+        submitToken,
+        source: settings.central_source_name || 'POLOLAB',
+        externalId: receipt.receipt_number,
+        title: `Boleta ${receipt.receipt_number}`,
+        content: text,
+        copies: 1,
+      });
+
+      const printerLabel = `Central de Impresión (${settings.printer_name || 'POS58 Printer'})`;
+      await db.run(
+        `UPDATE receipts SET print_status = 'impresa', printed_at = datetime('now'),
+         print_attempts = print_attempts + 1, printer_name = ?, last_error = '' WHERE id = ?`,
+        printerLabel,
+        receiptId,
+      );
+
+      return {
+        ok: true,
+        message: `Boleta ${receipt.receipt_number} enviada a la Central de Impresión`,
+        job,
+      };
+    } catch (err) {
+      const errorMsg = err.message || 'Error al enviar a la Central de Impresión';
+      await db.run(
+        `UPDATE receipts SET print_status = 'fallida', last_error = ?,
+         print_attempts = print_attempts + 1, printer_name = 'Central de Impresión' WHERE id = ?`,
+        errorMsg,
+        receiptId,
+      );
+      return { ok: false, error: errorMsg };
+    }
+  }
+
+  // 2. Envío directo al Spooler de Windows
+  const printerName = settings.printer_name;
+  if (!printerName) {
+    await db.run(
+      `UPDATE receipts SET print_status = 'fallida', last_error = 'No hay ninguna impresora configurada en el sistema',
+       print_attempts = print_attempts + 1 WHERE id = ?`,
+      receiptId,
+    );
+    return { ok: false, error: 'No hay ninguna impresora configurada' };
+  }
 
   try {
     const buffer = buildEscPosBuffer(receipt, order, { width, autoCut, storeInfo });

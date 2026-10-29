@@ -6,7 +6,7 @@ const multer = require('multer');
 const { requireAdmin } = require('../auth');
 const { PRODUCT_SELECT, ORDER_SELECT, withStock, getProduct, getOrder } = require('../queries');
 const { getSettings, saveSettings, generateReceipt, printReceipt, attachReceiptDetails } = require('../receipts');
-const { listPrinters, printTestTicket } = require('../printer');
+const { listPrinters, printTestTicket, sendToCentralPrinter } = require('../printer');
 const util = require('../util');
 
 const { HttpError } = util;
@@ -306,6 +306,11 @@ module.exports = ({ db }) => {
       printer_paper_width,
       printer_auto_cut,
       printer_auto_print,
+      print_method,
+      central_jobs_url,
+      central_site_access_token,
+      central_submit_token,
+      central_source_name,
       store_business_name,
       store_ruc,
       store_address,
@@ -322,6 +327,14 @@ module.exports = ({ db }) => {
     if (printer_auto_print !== undefined) {
       toSave.printer_auto_print = ['on_paid', 'on_order', 'disabled'].includes(printer_auto_print) ? printer_auto_print : 'on_paid';
     }
+    if (print_method !== undefined) {
+      toSave.print_method = ['central', 'windows_direct'].includes(print_method) ? print_method : 'central';
+    }
+    if (central_jobs_url !== undefined) toSave.central_jobs_url = String(central_jobs_url || '').trim();
+    if (central_site_access_token !== undefined) toSave.central_site_access_token = String(central_site_access_token || '').trim();
+    if (central_submit_token !== undefined) toSave.central_submit_token = String(central_submit_token || '').trim();
+    if (central_source_name !== undefined) toSave.central_source_name = String(central_source_name || 'POLOLAB').trim();
+
     if (store_business_name !== undefined) toSave.store_business_name = util.text(store_business_name, { field: 'razón social', min: 2, max: 100 });
     if (store_ruc !== undefined) toSave.store_ruc = util.text(store_ruc, { field: 'RUC', min: 8, max: 20, required: false });
     if (store_address !== undefined) toSave.store_address = util.text(store_address, { field: 'dirección', max: 150, required: false });
@@ -330,6 +343,53 @@ module.exports = ({ db }) => {
 
     await saveSettings(db, toSave);
     res.json(await getSettings(db));
+  });
+
+  r.post('/printer/test-central', async (req, res) => {
+    const settings = await getSettings(db);
+    const jobsUrl = req.body.central_jobs_url || settings.central_jobs_url;
+    const siteAccessToken = req.body.central_site_access_token || settings.central_site_access_token;
+    const submitToken = req.body.central_submit_token || settings.central_submit_token;
+    const source = req.body.central_source_name || settings.central_source_name || 'POLOLAB';
+
+    if (!jobsUrl || !siteAccessToken || !submitToken) {
+      throw new HttpError(400, 'Configura la URL y los tokens de la Central de Impresión');
+    }
+
+    const testId = `TEST-${Date.now().toString().slice(-6)}`;
+    const fecha = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' });
+    const content = [
+      '================================',
+      `   ${settings.store_business_name || 'POLOLAB PERÚ'}`,
+      '   CENTRAL DE IMPRESIÓN CLOUD',
+      '================================',
+      `Fecha: ${fecha}`,
+      `ID Prueba: ${testId}`,
+      'Estado: CONEXIÓN EXITOSA',
+      '--------------------------------',
+      'La tienda virtual está conectada',
+      'con tu Central de Comprobantes.',
+      'El comprobante se imprimirá en',
+      'la impresora POS58 de tu PC.',
+      '================================',
+      'POLOLAB · Hecho en Perú',
+      '================================',
+      '',
+      '',
+    ].join('\n');
+
+    const result = await sendToCentralPrinter({
+      jobsUrl,
+      siteAccessToken,
+      submitToken,
+      source,
+      externalId: testId,
+      title: `Prueba Central ${testId}`,
+      content,
+      copies: 1,
+    });
+
+    res.json({ ok: true, message: 'Ticket de prueba enviado a la Central de Impresión', ...result });
   });
 
   r.post('/printer/test', async (req, res) => {
@@ -384,7 +444,8 @@ module.exports = ({ db }) => {
 
   r.post('/receipts/:id/print', async (req, res) => {
     const id = parseInt(req.params.id, 10) || 0;
-    const result = await printReceipt(db, id);
+    const method = req.body?.method;
+    const result = await printReceipt(db, id, { method });
     const receipt = await db.get('SELECT * FROM receipts WHERE id = ?', id);
     res.json({ ...result, receipt });
   });
