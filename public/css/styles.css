@@ -2204,7 +2204,10 @@ ul.clean {
   }
 
   .main-nav {
-    display: none;
+    display: flex;
+    gap: 12px;
+    font-size: 14px;
+    align-items: center;
   }
 
   .brand {

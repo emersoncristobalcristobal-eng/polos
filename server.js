@@ -16,9 +16,31 @@ createApp()
         console.log(`Tienda en línea escuchando en el puerto ${PORT} (base de datos: Turso).`);
         return;
       }
-      console.log(`\nTienda lista en http://localhost:${PORT}`);
-      console.log(`Panel de administración: http://localhost:${PORT}/admin.html`);
-      console.log('No cierres esta ventana mientras uses la tienda. Para detenerla presiona Ctrl + C.\n');
+      const os = require('node:os');
+      const nets = os.networkInterfaces();
+      const ips = [];
+      for (const name of Object.keys(nets)) {
+        for (const net of nets[name] || []) {
+          if (net.family === 'IPv4' && !net.internal) ips.push(net.address);
+        }
+      }
+      console.log('\n======================================================');
+      console.log('   TIENDA POLOLAB - FUNCIONAL Y LISTA');
+      console.log('======================================================');
+      console.log(`En esta computadora:`);
+      console.log(`  -> Tienda: http://localhost:${PORT}`);
+      console.log(`  -> Panel Admin: http://localhost:${PORT}/admin.html`);
+      if (ips.length) {
+        console.log(`\nEn celulares y otras laptops (conectadas al mismo Wi-Fi):`);
+        for (const ip of ips) {
+          console.log(`  -> Tienda: http://${ip}:${PORT}`);
+          console.log(`  -> Panel Admin: http://${ip}:${PORT}/admin.html`);
+        }
+      }
+      console.log('======================================================');
+      console.log('Para usarla desde cualquier parte de internet (fuera de casa),');
+      console.log('ejecuta "compartir-en-internet.bat" o publica en Render.');
+      console.log('No cierres esta ventana mientras uses la tienda.\n');
     });
 
     server.on('error', (err) => {
