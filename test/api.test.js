@@ -9,16 +9,21 @@ let server;
 let base;
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tienda-test-'));
 
+let appInstance;
 before(async () => {
-  const app = await createApp({ dataDir });
-  server = app.listen(0);
+  appInstance = await createApp({ dataDir });
+  server = appInstance.listen(0);
   await new Promise((resolve) => server.once('listening', resolve));
   base = `http://127.0.0.1:${server.address().port}`;
 });
 
-after(() => {
+after(async () => {
   server.close();
-  fs.rmSync(dataDir, { recursive: true, force: true });
+  if (appInstance?.locals?.db) appInstance.locals.db.close();
+  await new Promise((r) => setTimeout(r, 150));
+  try {
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  } catch {}
 });
 
 // Cliente HTTP mínimo que guarda la cookie de sesión.
@@ -254,9 +259,72 @@ test('con ADMIN_PASSWORD la tienda no crea ni muestra cuentas de prueba', async 
     assert.ok(products.length > 0);
     srv.close();
     app.locals.db.close();
+    await new Promise((r) => setTimeout(r, 150));
   } finally {
     delete process.env.ADMIN_PASSWORD;
     delete process.env.ADMIN_EMAIL;
-    fs.rmSync(dir, { recursive: true, force: true });
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch {}
   }
 });
+
+test('el sistema genera boletas únicas y no duplica compras ni números de boleta', async () => {
+  const admin = client();
+  await admin('POST', '/api/auth/login', { email: 'admin@pololab.pe', password: 'admin123' });
+
+  // 1. Obtener y configurar la impresora
+  const printerRes = await admin('GET', '/api/admin/printer');
+  assert.equal(printerRes.status, 200);
+  assert.ok(Array.isArray(printerRes.data.printers));
+
+  const updatePrinter = await admin('PUT', '/api/admin/printer', {
+    printer_paper_width: '58mm',
+    printer_auto_cut: '1',
+    printer_auto_print: 'on_paid',
+    store_business_name: 'POLOLAB PERÚ S.A.C.',
+  });
+  assert.equal(updatePrinter.status, 200);
+  assert.equal(updatePrinter.data.printer_paper_width, '58mm');
+
+  // 2. Cliente realiza una compra
+  const customer = client();
+  await customer('POST', '/api/auth/register', { name: 'Carlos Díaz', email: 'carlos@test.pe', password: 'password123' });
+  const orderRes = await customer('POST', '/api/orders', {
+    items: [{ product_id: 1, size: 'M', quantity: 1, custom_text: 'CARLOS' }],
+    shipping,
+    payment_method: 'yape',
+  });
+  assert.equal(orderRes.status, 201);
+  const orderId = orderRes.data.id;
+
+  // 3. Como está en on_paid y el pedido aún es "pendiente", la boleta no se imprime prematuramente
+  const clientReceiptPending = await customer('GET', `/api/orders/${orderId}/receipt`);
+  assert.ok(clientReceiptPending.status === 404 || clientReceiptPending.data.print_status === 'pendiente');
+
+  // 4. Admin confirma el pago del pedido (status: 'pagado') -> se genera automáticamente la boleta única
+  const paidRes = await admin('PATCH', `/api/admin/orders/${orderId}`, { status: 'pagado' });
+  assert.equal(paidRes.status, 200);
+  assert.equal(paidRes.data.status, 'pagado');
+  assert.ok(paidRes.data.receipt);
+  const receiptNum = paidRes.data.receipt.receipt_number;
+  assert.match(receiptNum, /^B001-\d{8}$/);
+
+  // 5. Verificar idempotencia: volver a generar o consultar la boleta no debe crear un nuevo número ni duplicar
+  const genAgain = await admin('POST', `/api/admin/orders/${orderId}/receipt`, { print: false });
+  assert.equal(genAgain.status, 201);
+  assert.equal(genAgain.data.receipt_number, receiptNum);
+
+  // 6. Cliente puede consultar su boleta emitida con vista previa
+  const clientReceipt = await customer('GET', `/api/orders/${orderId}/receipt`);
+  assert.equal(clientReceipt.status, 200);
+  assert.equal(clientReceipt.data.receipt_number, receiptNum);
+  assert.ok(clientReceipt.data.preview_html.includes('BOLETA DE VENTA'));
+  assert.ok(clientReceipt.data.preview_html.includes(receiptNum));
+
+  // 7. Lista de boletas en el panel admin
+  const receiptsList = await admin('GET', '/api/admin/receipts');
+  assert.equal(receiptsList.status, 200);
+  assert.ok(receiptsList.data.some((r) => r.receipt_number === receiptNum));
+});
+

@@ -5,6 +5,8 @@ const { Router } = require('express');
 const multer = require('multer');
 const { requireAdmin } = require('../auth');
 const { PRODUCT_SELECT, ORDER_SELECT, withStock, getProduct, getOrder } = require('../queries');
+const { getSettings, saveSettings, generateReceipt, printReceipt, attachReceiptDetails } = require('../receipts');
+const { listPrinters, printTestTicket } = require('../printer');
 const util = require('../util');
 
 const { HttpError } = util;
@@ -257,6 +259,16 @@ module.exports = ({ db }) => {
       if (status === 'cancelado') await util.restock(t, order.items);
       await t.run("UPDATE orders SET status = ?, updated_at = datetime('now') WHERE id = ?", status, id);
     });
+
+    // Si el estado cambia a pagado, generar boleta y enviar a impresión automática
+    if (status === 'pagado') {
+      try {
+        await generateReceipt(db, id, { autoPrint: true });
+      } catch (err) {
+        console.error('Error generando boleta automática al pagar:', err);
+      }
+    }
+
     res.json(await getOrder(db, id));
   });
 
@@ -279,6 +291,109 @@ module.exports = ({ db }) => {
     const result = await db.run("UPDATE users SET active = ? WHERE id = ? AND role = 'cliente'", active, id);
     if (result.changes !== 1) throw new HttpError(404, 'Cliente no encontrado');
     res.json({ id, active: Boolean(active) });
+  });
+
+  // ---------- Boletas e Impresión ----------
+  r.get('/printer', async (req, res) => {
+    const settings = await getSettings(db);
+    const printers = await listPrinters();
+    res.json({ settings, printers });
+  });
+
+  r.put('/printer', async (req, res) => {
+    const {
+      printer_name,
+      printer_paper_width,
+      printer_auto_cut,
+      printer_auto_print,
+      store_business_name,
+      store_ruc,
+      store_address,
+      store_phone,
+      receipt_series,
+    } = req.body;
+
+    const toSave = {};
+    if (printer_name !== undefined) toSave.printer_name = String(printer_name || '').trim();
+    if (printer_paper_width !== undefined) {
+      toSave.printer_paper_width = ['58mm', '80mm'].includes(printer_paper_width) ? printer_paper_width : '58mm';
+    }
+    if (printer_auto_cut !== undefined) toSave.printer_auto_cut = util.bool(printer_auto_cut) ? '1' : '0';
+    if (printer_auto_print !== undefined) {
+      toSave.printer_auto_print = ['on_paid', 'on_order', 'disabled'].includes(printer_auto_print) ? printer_auto_print : 'on_paid';
+    }
+    if (store_business_name !== undefined) toSave.store_business_name = util.text(store_business_name, { field: 'razón social', min: 2, max: 100 });
+    if (store_ruc !== undefined) toSave.store_ruc = util.text(store_ruc, { field: 'RUC', min: 8, max: 20, required: false });
+    if (store_address !== undefined) toSave.store_address = util.text(store_address, { field: 'dirección', max: 150, required: false });
+    if (store_phone !== undefined) toSave.store_phone = util.text(store_phone, { field: 'teléfono', max: 50, required: false });
+    if (receipt_series !== undefined) toSave.receipt_series = util.text(receipt_series, { field: 'serie', min: 2, max: 10 }).toUpperCase();
+
+    await saveSettings(db, toSave);
+    res.json(await getSettings(db));
+  });
+
+  r.post('/printer/test', async (req, res) => {
+    const settings = await getSettings(db);
+    const printerName = req.body.printer_name || settings.printer_name;
+    const paperWidth = req.body.printer_paper_width || settings.printer_paper_width;
+    const autoCut = req.body.printer_auto_cut !== undefined ? util.bool(req.body.printer_auto_cut) : settings.printer_auto_cut === '1';
+
+    if (!printerName) throw new HttpError(400, 'Selecciona una impresora para la prueba');
+
+    const result = await printTestTicket(printerName, {
+      width: paperWidth,
+      autoCut,
+      storeInfo: {
+        name: settings.store_business_name,
+        ruc: settings.store_ruc,
+        address: settings.store_address,
+        phone: settings.store_phone,
+      },
+    });
+    res.json(result);
+  });
+
+  r.get('/receipts', async (req, res) => {
+    const where = [];
+    const params = [];
+    if (['pendiente', 'impresa', 'fallida'].includes(req.query.status)) {
+      where.push('r.print_status = ?');
+      params.push(req.query.status);
+    }
+    if (req.query.q) {
+      const q = String(req.query.q).trim().replace(/^#/, '');
+      where.push('(r.receipt_number LIKE ? OR r.customer_name LIKE ? OR r.order_id = ?)');
+      params.push(`%${q}%`, `%${q}%`, parseInt(q, 10) || 0);
+    }
+    const sql = `
+      SELECT r.*, o.created_at AS order_date, o.status AS order_status
+      FROM receipts r
+      JOIN orders o ON o.id = r.order_id
+      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+      ORDER BY r.id DESC LIMIT 200`;
+    res.json(await db.all(sql, ...params));
+  });
+
+  r.get('/receipts/:id', async (req, res) => {
+    const receipt = await db.get('SELECT * FROM receipts WHERE id = ?', parseInt(req.params.id, 10) || 0);
+    if (!receipt) throw new HttpError(404, 'Boleta no encontrada');
+    const order = await getOrder(db, receipt.order_id);
+    const settings = await getSettings(db);
+    res.json(attachReceiptDetails(receipt, order, settings));
+  });
+
+  r.post('/receipts/:id/print', async (req, res) => {
+    const id = parseInt(req.params.id, 10) || 0;
+    const result = await printReceipt(db, id);
+    const receipt = await db.get('SELECT * FROM receipts WHERE id = ?', id);
+    res.json({ ...result, receipt });
+  });
+
+  r.post('/orders/:id/receipt', async (req, res) => {
+    const id = parseInt(req.params.id, 10) || 0;
+    const autoPrint = req.body.print !== false;
+    const receipt = await generateReceipt(db, id, { autoPrint, forceImmediatePrint: autoPrint });
+    res.status(201).json(receipt);
   });
 
   return r;

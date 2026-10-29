@@ -87,9 +87,41 @@ CREATE TABLE IF NOT EXISTS images (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS receipts (
+  id             INTEGER PRIMARY KEY,
+  order_id       INTEGER NOT NULL UNIQUE REFERENCES orders (id) ON DELETE CASCADE,
+  receipt_number TEXT NOT NULL UNIQUE,
+  series         TEXT NOT NULL DEFAULT 'B001',
+  correlative    INTEGER NOT NULL,
+  issue_date     TEXT NOT NULL DEFAULT (datetime('now')),
+  customer_name  TEXT NOT NULL,
+  customer_phone TEXT NOT NULL DEFAULT '',
+  customer_doc   TEXT NOT NULL DEFAULT '',
+  customer_city  TEXT NOT NULL DEFAULT '',
+  customer_address TEXT NOT NULL DEFAULT '',
+  payment_method TEXT NOT NULL,
+  subtotal       INTEGER NOT NULL,
+  shipping       INTEGER NOT NULL,
+  discount       INTEGER NOT NULL DEFAULT 0,
+  total          INTEGER NOT NULL,
+  print_status   TEXT NOT NULL DEFAULT 'pendiente' CHECK (print_status IN ('pendiente', 'impresa', 'fallida')),
+  print_attempts INTEGER NOT NULL DEFAULT 0,
+  printed_at     TEXT,
+  printer_name   TEXT NOT NULL DEFAULT '',
+  last_error     TEXT NOT NULL DEFAULT '',
+  created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_orders_user   ON orders (user_id);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status);
 CREATE INDEX IF NOT EXISTS idx_items_order   ON order_items (order_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_receipts_order ON receipts (order_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_receipts_number ON receipts (receipt_number);
 `;
 
 const DEMO_CATEGORIES = ['Colección Lima 26', 'Oversize', 'Street', 'Básicos', 'Deportivo'];
@@ -211,6 +243,61 @@ async function migrate(db) {
   if (!(await hasColumn('order_items', 'print'))) {
     await db.run("ALTER TABLE order_items ADD COLUMN print TEXT NOT NULL DEFAULT 'ninguno'");
     await db.run('UPDATE order_items SET print = (SELECT print FROM products WHERE id = order_items.product_id) WHERE product_id IS NOT NULL');
+  }
+
+  const hasTable = async (table) =>
+    Boolean(await db.get("SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?", table));
+  if (!(await hasTable('settings'))) {
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS settings (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+    `);
+    const defaults = [
+      ['printer_name', ''],
+      ['printer_paper_width', '58mm'],
+      ['printer_auto_cut', '1'],
+      ['printer_auto_print', 'on_paid'],
+      ['store_business_name', 'POLOLAB PERÚ S.A.C.'],
+      ['store_ruc', '20608974512'],
+      ['store_address', 'Av. Larco 743, Miraflores, Lima'],
+      ['store_phone', '(01) 445-8920 / 992 481 029'],
+      ['receipt_series', 'B001'],
+    ];
+    for (const [k, v] of defaults) {
+      await db.run('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', k, v);
+    }
+  }
+  if (!(await hasTable('receipts'))) {
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS receipts (
+        id             INTEGER PRIMARY KEY,
+        order_id       INTEGER NOT NULL UNIQUE REFERENCES orders (id) ON DELETE CASCADE,
+        receipt_number TEXT NOT NULL UNIQUE,
+        series         TEXT NOT NULL DEFAULT 'B001',
+        correlative    INTEGER NOT NULL,
+        issue_date     TEXT NOT NULL DEFAULT (datetime('now')),
+        customer_name  TEXT NOT NULL,
+        customer_phone TEXT NOT NULL DEFAULT '',
+        customer_doc   TEXT NOT NULL DEFAULT '',
+        customer_city  TEXT NOT NULL DEFAULT '',
+        customer_address TEXT NOT NULL DEFAULT '',
+        payment_method TEXT NOT NULL,
+        subtotal       INTEGER NOT NULL,
+        shipping       INTEGER NOT NULL,
+        discount       INTEGER NOT NULL DEFAULT 0,
+        total          INTEGER NOT NULL,
+        print_status   TEXT NOT NULL DEFAULT 'pendiente' CHECK (print_status IN ('pendiente', 'impresa', 'fallida')),
+        print_attempts INTEGER NOT NULL DEFAULT 0,
+        printed_at     TEXT,
+        printer_name   TEXT NOT NULL DEFAULT '',
+        last_error     TEXT NOT NULL DEFAULT '',
+        created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_receipts_order ON receipts (order_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_receipts_number ON receipts (receipt_number);
+    `);
   }
 }
 

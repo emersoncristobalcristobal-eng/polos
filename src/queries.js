@@ -42,7 +42,15 @@ const ORDER_SELECT = `
 async function withItems(q, orders) {
   const ids = orders.map((o) => o.id);
   const items = await q.all(`SELECT * FROM order_items WHERE order_id IN (${placeholders(ids)}) ORDER BY id`, ...ids);
-  return orders.map((o) => ({ ...o, items: items.filter((it) => it.order_id === o.id) }));
+  let receipts = [];
+  try {
+    receipts = await q.all(`SELECT id, order_id, receipt_number, series, correlative, issue_date, print_status, print_attempts, printed_at, printer_name, last_error FROM receipts WHERE order_id IN (${placeholders(ids)})`, ...ids);
+  } catch {}
+  return orders.map((o) => ({
+    ...o,
+    items: items.filter((it) => it.order_id === o.id),
+    receipt: receipts.find((r) => r.order_id === o.id) || null,
+  }));
 }
 
 async function getOrder(q, id) {

@@ -1,4 +1,4 @@
-import { PAYMENT, STATUS_FLOW, api, esc, fmtDate, logout, money, mountChrome, productVisual, qs, qsa, statusChip, toast } from './core.js';
+import { PAYMENT, STATUS_FLOW, api, esc, fmtDate, logout, money, mountChrome, productVisual, qs, qsa, statusChip, toast, icons } from './core.js';
 
 const user = await mountChrome();
 if (!user) location.replace('/login.html?next=/cuenta.html');
@@ -6,6 +6,33 @@ if (!user) location.replace('/login.html?next=/cuenta.html');
 const newOrderId = Number(new URLSearchParams(location.search).get('pedido')) || null;
 const ordersPanel = qs('[data-panel="pedidos"]');
 const profilePanel = qs('[data-panel="datos"]');
+
+const modal = qs('[data-modal]');
+const modalTitle = qs('[data-modal-title]');
+const modalBody = qs('[data-modal-body]');
+qs('[data-modal-close]')?.addEventListener('click', () => modal?.close());
+modal?.addEventListener('click', (e) => {
+  if (e.target === modal) modal.close();
+});
+
+function openReceiptModal(receipt) {
+  if (!modal) return;
+  modalTitle.textContent = `Boleta de Venta #${receipt.receipt_number}`;
+  modalBody.innerHTML = `
+    <div class="receipt-preview-wrap">
+      <div class="receipt-actions">
+        <button class="btn btn-sm" type="button" data-print-window>
+          ${icons.printer} Imprimir / Guardar en PDF
+        </button>
+      </div>
+      <div style="width: 100%; display: flex; justify-content: center">
+        ${receipt.preview_html}
+      </div>
+    </div>
+  `;
+  qs('[data-print-window]', modalBody)?.addEventListener('click', () => window.print());
+  modal.showModal();
+}
 
 qs('[data-hello]').textContent = `Hola, ${user?.name.split(' ')[0] ?? ''}`;
 qs('[data-logout]').addEventListener('click', logout);
@@ -54,6 +81,14 @@ function orderHTML(o) {
           <span>Pago: ${esc(PAYMENT[o.payment_method] || o.payment_method)}</span>
           <span>Subtotal ${money(o.subtotal)} · Envío ${o.shipping ? money(o.shipping) : 'gratis'}</span>
           ${o.notes ? `<span>Notas: ${esc(o.notes)}</span>` : ''}
+          ${o.receipt ? `
+            <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--line); display: flex; justify-content: space-between; align-items: center">
+              <span><strong>Boleta:</strong> ${esc(o.receipt.receipt_number)}</span>
+              <button class="btn-ghost btn-sm" type="button" data-view-receipt="${o.id}">
+                ${icons.receipt} Ver boleta
+              </button>
+            </div>
+          ` : ''}
         </div>
         ${o.status === 'pendiente' ? `<button class="link-btn" type="button" style="margin-top: 14px" data-cancel="${o.id}">Cancelar pedido</button>` : ''}
       </div>
@@ -77,6 +112,21 @@ async function loadOrders() {
 }
 
 ordersPanel.addEventListener('click', async (e) => {
+  const viewReceiptBtn = e.target.closest('[data-view-receipt]');
+  if (viewReceiptBtn) {
+    const id = viewReceiptBtn.dataset.viewReceipt;
+    viewReceiptBtn.disabled = true;
+    try {
+      const receipt = await api(`/orders/${id}/receipt`);
+      openReceiptModal(receipt);
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      viewReceiptBtn.disabled = false;
+    }
+    return;
+  }
+
   const btn = e.target.closest('[data-cancel]');
   if (!btn) return;
   if (!confirm(`¿Seguro que quieres cancelar el pedido #${btn.dataset.cancel}?`)) return;

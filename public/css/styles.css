@@ -2266,3 +2266,52 @@ ul.clean {
     scroll-behavior: auto !important;
   }
 }
+
+/* Boleta térmica y ventana de impresión */
+.thermal-receipt {
+  background: #ffffff;
+  color: #111111;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 13px;
+  line-height: 1.35;
+  padding: 16px 14px;
+  border-radius: 4px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0 auto;
+}
+.thermal-receipt.thermal-58 { max-width: 300px; font-size: 11.5px; }
+.thermal-receipt.thermal-80 { max-width: 380px; font-size: 13px; }
+.tr-header { text-align: center; margin-bottom: 6px; }
+.tr-brand { font-weight: 800; font-size: 16px; letter-spacing: 0.05em; margin-bottom: 2px; }
+.tr-sub { font-size: 0.85em; color: #444; }
+.tr-divider { text-align: center; font-size: 0.85em; letter-spacing: -1px; margin: 4px 0; color: #666; overflow: hidden; white-space: nowrap; }
+.tr-title { text-align: center; font-weight: 700; font-size: 1.05em; margin-top: 4px; }
+.tr-num { text-align: center; font-weight: 700; letter-spacing: 0.08em; }
+.tr-info { margin: 6px 0; font-size: 0.9em; display: grid; gap: 2px; }
+.tr-table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 0.9em; }
+.tr-table th { text-align: left; border-bottom: 1px dashed #888; padding: 4px 2px; font-size: 0.85em; color: #333; }
+.tr-table td { padding: 4px 2px; vertical-align: top; border-bottom: 1px dotted #ddd; }
+.tr-col-qty { width: 36px; text-align: left; }
+.tr-col-price { text-align: right; white-space: nowrap; }
+.tr-totals { display: grid; gap: 2px; margin: 6px 0; font-size: 0.95em; }
+.tr-row { display: flex; justify-content: space-between; }
+.tr-total { font-size: 1.15em; font-weight: 800; }
+.tr-footer { text-align: center; margin-top: 10px; font-size: 0.85em; color: #444; display: grid; gap: 2px; }
+.tr-footer p { font-weight: 700; margin: 0; color: #111; }
+
+@media print {
+  body * { visibility: hidden; }
+  [data-receipt-print], [data-receipt-print] * { visibility: visible; }
+  [data-receipt-print] {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    max-width: 100% !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+  }
+}
+

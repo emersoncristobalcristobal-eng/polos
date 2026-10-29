@@ -16,6 +16,7 @@ const VIEWS = {
   dashboard: { title: 'Dashboard', kicker: 'Resumen', icon: icons.grid, render: renderDashboard },
   productos: { title: 'Productos', kicker: 'Catálogo', icon: icons.shirt, render: renderProducts },
   pedidos: { title: 'Pedidos', kicker: 'Ventas', icon: icons.box, render: renderOrders },
+  boletas: { title: 'Boletas e Impresión', kicker: 'Facturación', icon: icons.printer, render: renderReceipts },
   categorias: { title: 'Categorías', kicker: 'Catálogo', icon: icons.tag, render: renderCategories },
   clientes: { title: 'Clientes', kicker: 'Comunidad', icon: icons.users, render: renderCustomers },
 };
@@ -687,11 +688,74 @@ async function openOrder(id, onChange) {
           <div class="summary-row"><span>Envío</span><span>${order.shipping ? money(order.shipping) : 'Gratis'}</span></div>
           <div class="detail-total"><span>Total</span><span>${money(order.total)}</span></div>
         </div>
+        <div class="detail-box">
+          <div style="display: flex; justify-content: space-between; align-items: center">
+            <h3>Boleta de Venta</h3>
+            ${order.receipt
+              ? `<span class="print-status ${order.receipt.print_status}">
+                  ${order.receipt.print_status === 'impresa' ? 'Impresa' : order.receipt.print_status === 'pendiente' ? 'Pendiente' : 'Error'}
+                 </span>`
+              : '<small class="muted">No emitida</small>'}
+          </div>
+          ${order.receipt ? `
+            <div style="display: grid; gap: 4px; font-size: 13px; margin: 6px 0">
+              <div><strong>Nº:</strong> ${esc(order.receipt.receipt_number)}</div>
+              <div><strong>Emisión:</strong> ${fmtDate(order.receipt.issue_date)}</div>
+              ${order.receipt.printed_at ? `<div><strong>Impresión:</strong> ${fmtDate(order.receipt.printed_at)} (${esc(order.receipt.printer_name || 'Impresora')})</div>` : ''}
+              ${order.receipt.last_error ? `<div class="warn-text" style="font-size: 12px"><small>Error: ${esc(order.receipt.last_error)}</small></div>` : ''}
+            </div>
+            <div style="display: flex; gap: 8px; margin-top: 8px">
+              <button class="btn btn-sm" type="button" data-view-receipt="${order.receipt.id}">${icons.receipt}Ver boleta</button>
+              <button class="btn-ghost btn-sm" type="button" data-print-receipt="${order.receipt.id}">${icons.printer}Imprimir</button>
+            </div>
+          ` : `
+            <p class="muted" style="margin: 6px 0 10px; font-size: 13px">La boleta se emite automáticamente cuando el pago es confirmado.</p>
+            <button class="btn btn-sm" type="button" data-generate-receipt="${order.id}">${icons.plus}Emitir e imprimir boleta</button>
+          `}
+        </div>
         ${order.status === 'cancelado'
           ? '<p class="muted">Este pedido fue cancelado y su stock ya se devolvió al inventario.</p>'
           : `<label class="field"><span>Cambiar estado</span>${statusSelect(order, 'data-detail-status')}</label>`}
       </div>
     </div>`);
+
+  qs('[data-view-receipt]', body)?.addEventListener('click', (e) => {
+    openReceiptModal(Number(e.currentTarget.dataset.viewReceipt));
+  });
+
+  qs('[data-print-receipt]', body)?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.textContent = 'Imprimiendo…';
+    try {
+      const res = await api(`/admin/receipts/${btn.dataset.printReceipt}/print`, { method: 'POST' });
+      if (res.ok) {
+        toast('Boleta enviada a la impresora con éxito');
+      } else {
+        toast(res.error || 'No se pudo imprimir la boleta', 'error');
+      }
+      openOrder(order.id, onChange);
+    } catch (err) {
+      toast(err.message, 'error');
+      btn.disabled = false;
+      btn.innerHTML = `${icons.printer}Imprimir`;
+    }
+  });
+
+  qs('[data-generate-receipt]', body)?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.textContent = 'Generando…';
+    try {
+      await api(`/admin/orders/${btn.dataset.generateReceipt}/receipt`, { method: 'POST' });
+      toast('Boleta generada');
+      openOrder(order.id, onChange);
+    } catch (err) {
+      toast(err.message, 'error');
+      btn.disabled = false;
+      btn.innerHTML = `${icons.plus}Emitir e imprimir boleta`;
+    }
+  });
 
   qs('[data-detail-status]', body)?.addEventListener('change', async (e) => {
     try {
@@ -825,6 +889,445 @@ async function renderCustomers(alive) {
     }
   });
   draw();
+}
+
+// =========================================================
+// Boletas e Impresión
+// =========================================================
+let activeReceiptTab = 'historial';
+const receiptFilter = { status: '', q: '' };
+
+async function openReceiptModal(receiptId) {
+  let receipt;
+  try {
+    receipt = await api(`/admin/receipts/${receiptId}`);
+  } catch (err) {
+    return toast(err.message, 'error');
+  }
+
+  const body = openModal(`Boleta ${receipt.receipt_number}`, `
+    <div class="receipt-preview-wrap">
+      <div class="receipt-actions">
+        <button class="btn btn-sm" type="button" data-modal-print-direct="${receipt.id}">
+          ${icons.printer} Imprimir en impresora térmica
+        </button>
+        <button class="btn-ghost btn-sm" type="button" data-modal-print-browser>
+          Imprimir con navegador (Ctrl + P)
+        </button>
+      </div>
+
+      <div style="width: 100%; display: flex; justify-content: center">
+        ${receipt.preview_html}
+      </div>
+
+      ${receipt.last_error ? `
+        <div class="warn-text" style="text-align: center; font-size: 13px">
+          <strong>Último error de impresión:</strong> ${esc(receipt.last_error)}
+        </div>
+      ` : ''}
+    </div>
+  `);
+
+  qs('[data-modal-print-direct]', body)?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.textContent = 'Enviando a la impresora…';
+    try {
+      const res = await api(`/admin/receipts/${receipt.id}/print`, { method: 'POST' });
+      if (res.ok) {
+        toast(`Boleta ${receipt.receipt_number} enviada a impresión`);
+      } else {
+        toast(res.error || 'Fallo de impresión', 'error');
+      }
+      openReceiptModal(receipt.id);
+    } catch (err) {
+      toast(err.message, 'error');
+      btn.disabled = false;
+      btn.innerHTML = `${icons.printer} Imprimir en impresora térmica`;
+    }
+  });
+
+  qs('[data-modal-print-browser]', body)?.addEventListener('click', () => {
+    window.print();
+  });
+}
+
+async function renderReceipts(alive, arg) {
+  if (arg === 'configuracion') activeReceiptTab = 'configuracion';
+  else if (arg === 'historial') activeReceiptTab = 'historial';
+
+  view.innerHTML = `
+    <div class="admin-toolbar" style="margin-bottom: 20px">
+      <div class="seg" role="group" aria-label="Secciones" data-rtabs>
+        <button type="button" data-rtab="historial" aria-pressed="${activeReceiptTab === 'historial'}">
+          ${icons.receipt} Historial de Boletas
+        </button>
+        <button type="button" data-rtab="configuracion" aria-pressed="${activeReceiptTab === 'configuracion'}">
+          ${icons.printer} Configuración de Impresora
+        </button>
+      </div>
+    </div>
+    <div data-rcontent></div>
+  `;
+
+  const tabs = qs('[data-rtabs]', view);
+  const container = qs('[data-rcontent]', view);
+
+  tabs.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-rtab]');
+    if (!btn) return;
+    activeReceiptTab = btn.dataset.rtab;
+    history.replaceState(null, '', `#boletas/${activeReceiptTab}`);
+    renderReceipts(alive, activeReceiptTab);
+  });
+
+  if (activeReceiptTab === 'historial') {
+    await renderReceiptHistory(container, alive);
+  } else {
+    await renderPrinterConfig(container, alive);
+  }
+}
+
+async function renderReceiptHistory(container, alive) {
+  let receipts = [];
+  try {
+    receipts = await api('/admin/receipts');
+  } catch (err) {
+    if (!alive()) return;
+    container.innerHTML = `<div class="empty"><h3>Error al cargar boletas</h3><p>${esc(err.message)}</p></div>`;
+    return;
+  }
+  if (!alive()) return;
+
+  container.innerHTML = `
+    <div class="admin-toolbar" style="margin-bottom: 16px">
+      <div class="seg" role="group" aria-label="Filtrar por estado" data-rseg></div>
+      <label class="search" style="margin-left: auto">
+        <span class="sr-only">Buscar boleta</span>${icons.search}
+        <input type="search" placeholder="Nº de boleta, cliente o pedido" value="${esc(receiptFilter.q)}" data-rq>
+      </label>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Boleta</th>
+            <th>Pedido</th>
+            <th>Cliente</th>
+            <th>Fecha emisión</th>
+            <th class="num">Total</th>
+            <th>Estado impresión</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody data-rrows></tbody>
+      </table>
+    </div>
+  `;
+
+  const seg = qs('[data-rseg]', container);
+  const rows = qs('[data-rrows]', container);
+  const q = qs('[data-rq]', container);
+
+  const draw = () => {
+    const counts = {
+      all: receipts.length,
+      impresa: receipts.filter((r) => r.print_status === 'impresa').length,
+      pendiente: receipts.filter((r) => r.print_status === 'pendiente').length,
+      fallida: receipts.filter((r) => r.print_status === 'fallida').length,
+    };
+
+    seg.innerHTML = [
+      ['', 'Todas', counts.all],
+      ['impresa', 'Impresas', counts.impresa],
+      ['pendiente', 'Pendientes', counts.pendiente],
+      ['fallida', 'Fallidas', counts.fallida],
+    ]
+      .map(
+        ([k, label, n]) => `
+        <button type="button" data-rstatus="${k}" aria-pressed="${receiptFilter.status === k}">
+          ${label} <small>${n}</small>
+        </button>`,
+      )
+      .join('');
+
+    const term = receiptFilter.q.toLowerCase().trim().replace(/^#/, '');
+    const list = receipts.filter((r) => {
+      if (receiptFilter.status && r.print_status !== receiptFilter.status) return false;
+      if (!term) return true;
+      return (
+        r.receipt_number.toLowerCase().includes(term) ||
+        r.customer_name.toLowerCase().includes(term) ||
+        String(r.order_id) === term
+      );
+    });
+
+    rows.innerHTML = list.length
+      ? list
+          .map((r) => `
+        <tr>
+          <td><button class="link-btn" type="button" data-open-receipt="${r.id}"><strong>${esc(r.receipt_number)}</strong></button></td>
+          <td><button class="link-btn" type="button" data-open-order="${r.order_id}">#${r.order_id}</button></td>
+          <td><strong>${esc(r.customer_name)}</strong><br><small>${esc(r.customer_phone || '')}</small></td>
+          <td><small>${fmtDate(r.issue_date)}</small></td>
+          <td class="num"><strong>${money(r.total)}</strong></td>
+          <td>
+            <span class="print-status ${r.print_status}" title="${r.last_error ? esc(r.last_error) : ''}">
+              ${r.print_status === 'impresa' ? 'Impresa' : r.print_status === 'pendiente' ? 'Pendiente' : 'Fallida'}
+            </span>
+            ${r.printed_at ? `<br><small class="muted">${fmtDate(r.printed_at, true)}</small>` : ''}
+            ${r.last_error ? `<br><small class="warn-text" title="${esc(r.last_error)}">${esc(r.last_error.slice(0, 32))}…</small>` : ''}
+          </td>
+          <td>
+            <div class="row-actions">
+              <button class="btn-ghost btn-sm" type="button" data-open-receipt="${r.id}">${icons.receipt} Ver</button>
+              <button class="btn btn-sm" type="button" data-reprint-receipt="${r.id}" title="Enviar a impresora física">
+                ${icons.printer} ${r.print_status === 'impresa' ? 'Reimprimir' : 'Imprimir'}
+              </button>
+            </div>
+          </td>
+        </tr>`)
+          .join('')
+      : '<tr><td colspan="7"><p class="muted" style="padding: 24px 0; text-align: center">No hay boletas registradas con ese filtro.</p></td></tr>';
+  };
+
+  seg.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-rstatus]');
+    if (!btn) return;
+    receiptFilter.status = btn.dataset.rstatus;
+    draw();
+  });
+
+  q.addEventListener('input', () => {
+    receiptFilter.q = q.value.trim();
+    draw();
+  });
+
+  rows.addEventListener('click', async (e) => {
+    const openReceipt = e.target.closest('[data-open-receipt]');
+    if (openReceipt) {
+      return openReceiptModal(Number(openReceipt.dataset.openReceipt));
+    }
+
+    const openOrderBtn = e.target.closest('[data-open-order]');
+    if (openOrderBtn) {
+      return openOrder(Number(openOrderBtn.dataset.openOrder), () => {
+        renderReceiptHistory(container, alive);
+      });
+    }
+
+    const reprint = e.target.closest('[data-reprint-receipt]');
+    if (reprint) {
+      const id = Number(reprint.dataset.reprintReceipt);
+      reprint.disabled = true;
+      reprint.textContent = 'Imprimiendo…';
+      try {
+        const res = await api(`/admin/receipts/${id}/print`, { method: 'POST' });
+        if (res.ok) {
+          toast('Boleta enviada a la impresora');
+        } else {
+          toast(res.error || 'Error al imprimir', 'error');
+        }
+        await renderReceiptHistory(container, alive);
+      } catch (err) {
+        toast(err.message, 'error');
+        reprint.disabled = false;
+        reprint.innerHTML = `${icons.printer} Imprimir`;
+      }
+    }
+  });
+
+  draw();
+}
+
+async function renderPrinterConfig(container, alive) {
+  let data;
+  try {
+    data = await api('/admin/printer');
+  } catch (err) {
+    if (!alive()) return;
+    container.innerHTML = `<div class="empty"><h3>Error al cargar configuración</h3><p>${esc(err.message)}</p></div>`;
+    return;
+  }
+  if (!alive()) return;
+
+  const { settings, printers } = data;
+
+  container.innerHTML = `
+    <form class="printer-grid" data-printer-form novalidate>
+      <section class="printer-card">
+        <div class="panel-head" style="margin: 0">
+          <h2>Impresora Térmica Física</h2>
+        </div>
+        <p class="muted" style="font-size: 13px; margin: 0">
+          Conecta tu impresora térmica por USB, red o puerto serie. Se detectan las impresoras instaladas en Windows.
+        </p>
+
+        <label class="field full">
+          <span>Impresora de Windows</span>
+          <select name="printer_name" required>
+            <option value="">-- Seleccionar impresora conectada --</option>
+            ${printers
+              .map(
+                (p) => `
+              <option value="${esc(p.name)}" ${p.name === settings.printer_name ? 'selected' : ''}>
+                ${esc(p.name)} ${p.isDefault ? '(Predeterminada del sistema)' : ''} [${esc(p.status)}]
+              </option>`,
+              )
+              .join('')}
+          </select>
+          <small class="muted">Si no aparece tu impresora térmica, asegúrate de tener instalado su controlador en Windows.</small>
+        </label>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px">
+          <label class="field">
+            <span>Ancho del papel térmico</span>
+            <select name="printer_paper_width">
+              <option value="58mm" ${settings.printer_paper_width === '58mm' ? 'selected' : ''}>58 mm (32 columnas · Ticket estándar pequeño)</option>
+              <option value="80mm" ${settings.printer_paper_width === '80mm' ? 'selected' : ''}>80 mm (48 columnas · Ticket estándar grande)</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Modo de impresión automática</span>
+            <select name="printer_auto_print">
+              <option value="on_paid" ${settings.printer_auto_print === 'on_paid' ? 'selected' : ''}>
+                Al confirmar el pago (Estado "Pagado") [Recomendado]
+              </option>
+              <option value="on_order" ${settings.printer_auto_print === 'on_order' ? 'selected' : ''}>
+                Inmediata al registrar cada compra (Punto de Venta / Mostrador)
+              </option>
+              <option value="disabled" ${settings.printer_auto_print === 'disabled' ? 'selected' : ''}>
+                Desactivada (Solo imprimir manualmente desde el panel)
+              </option>
+            </select>
+          </label>
+        </div>
+
+        <label class="switch">
+          <input type="checkbox" name="printer_auto_cut" value="1" ${settings.printer_auto_cut === '1' ? 'checked' : ''}>
+          <span>Corte automático de papel (comando ESC/POS GS V 0 tras finalizar el ticket)</span>
+        </label>
+
+        <div style="margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap">
+          <button class="btn-ghost btn-sm" type="button" data-test-print>
+            ${icons.printer} Imprimir ticket de prueba
+          </button>
+        </div>
+      </section>
+
+      <section class="printer-card">
+        <div class="panel-head" style="margin: 0">
+          <h2>Datos Comerciales de la Boleta</h2>
+        </div>
+        <p class="muted" style="font-size: 13px; margin: 0">
+          Estos datos se imprimen en la cabecera y pie de cada boleta de venta.
+        </p>
+
+        <label class="field full">
+          <span>Nombre de la Empresa o Marca</span>
+          <input type="text" name="store_business_name" required maxlength="100" value="${esc(settings.store_business_name)}">
+        </label>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px">
+          <label class="field">
+            <span>R.U.C. o Identificación Fiscal</span>
+            <input type="text" name="store_ruc" maxlength="20" value="${esc(settings.store_ruc)}">
+          </label>
+
+          <label class="field">
+            <span>Serie de Boleta</span>
+            <input type="text" name="receipt_series" maxlength="10" value="${esc(settings.receipt_series || 'B001')}">
+          </label>
+        </div>
+
+        <label class="field full">
+          <span>Dirección de la tienda / Local</span>
+          <input type="text" name="store_address" maxlength="150" value="${esc(settings.store_address)}">
+        </label>
+
+        <label class="field full">
+          <span>Teléfono / WhatsApp de atención</span>
+          <input type="text" name="store_phone" maxlength="50" value="${esc(settings.store_phone)}">
+        </label>
+
+        <p class="form-error full" role="alert" data-cfg-error></p>
+
+        <div style="margin-top: auto; display: flex; justify-content: flex-end">
+          <button class="btn" type="submit">Guardar configuración</button>
+        </div>
+      </section>
+    </form>
+  `;
+
+  const form = qs('[data-printer-form]', container);
+  const errorP = qs('[data-cfg-error]', container);
+  const testBtn = qs('[data-test-print]', container);
+
+  testBtn.addEventListener('click', async () => {
+    testBtn.disabled = true;
+    testBtn.textContent = 'Enviando prueba…';
+    try {
+      const pName = form.elements.printer_name.value;
+      const pWidth = form.elements.printer_paper_width.value;
+      const pCut = form.elements.printer_auto_cut.checked;
+
+      if (!pName) {
+        throw new Error('Por favor selecciona primero una impresora de la lista');
+      }
+
+      const res = await api('/admin/printer/test', {
+        method: 'POST',
+        body: {
+          printer_name: pName,
+          printer_paper_width: pWidth,
+          printer_auto_cut: pCut,
+        },
+      });
+
+      if (res.ok) {
+        toast(`Ticket de prueba enviado a '${pName}'`);
+      } else {
+        toast(res.error || 'No se pudo imprimir la prueba', 'error');
+      }
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      testBtn.disabled = false;
+      testBtn.innerHTML = `${icons.printer} Imprimir ticket de prueba`;
+    }
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errorP.textContent = '';
+    const submitBtn = form.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Guardando…';
+
+    try {
+      await api('/admin/printer', {
+        method: 'PUT',
+        body: {
+          printer_name: form.elements.printer_name.value,
+          printer_paper_width: form.elements.printer_paper_width.value,
+          printer_auto_cut: form.elements.printer_auto_cut.checked ? '1' : '0',
+          printer_auto_print: form.elements.printer_auto_print.value,
+          store_business_name: form.elements.store_business_name.value,
+          store_ruc: form.elements.store_ruc.value,
+          store_address: form.elements.store_address.value,
+          store_phone: form.elements.store_phone.value,
+          receipt_series: form.elements.receipt_series.value,
+        },
+      });
+      toast('Configuración de impresora guardada');
+      await renderPrinterConfig(container, alive);
+    } catch (err) {
+      errorP.textContent = err.message;
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Guardar configuración';
+    }
+  });
 }
 
 route();

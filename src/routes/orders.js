@@ -3,6 +3,7 @@
 const { Router } = require('express');
 const { requireUser } = require('../auth');
 const { ORDER_SELECT, getOrder, withItems } = require('../queries');
+const { getSettings, generateReceipt, attachReceiptDetails } = require('../receipts');
 const util = require('../util');
 
 const { HttpError } = util;
@@ -60,6 +61,15 @@ module.exports = ({ db }) => {
       return id;
     });
 
+    try {
+      const settings = await getSettings(db);
+      if (settings.printer_auto_print === 'on_order') {
+        await generateReceipt(db, orderId, { autoPrint: true });
+      }
+    } catch (err) {
+      console.error('Error generando boleta al crear pedido:', err);
+    }
+
     res.status(201).json(await getOrder(db, orderId));
   });
 
@@ -72,6 +82,16 @@ module.exports = ({ db }) => {
     const order = await getOrder(db, parseInt(req.params.id, 10) || 0);
     if (!order || order.user_id !== req.user.id) throw new HttpError(404, 'Pedido no encontrado');
     res.json(order);
+  });
+
+  r.get('/:id/receipt', async (req, res) => {
+    const orderId = parseInt(req.params.id, 10) || 0;
+    const order = await getOrder(db, orderId);
+    if (!order || order.user_id !== req.user.id) throw new HttpError(404, 'Pedido no encontrado');
+    const receipt = await db.get('SELECT * FROM receipts WHERE order_id = ?', orderId);
+    if (!receipt) throw new HttpError(404, 'La boleta para este pedido aún no ha sido emitida');
+    const settings = await getSettings(db);
+    res.json(attachReceiptDetails(receipt, order, settings));
   });
 
   r.post('/:id/cancel', async (req, res) => {
